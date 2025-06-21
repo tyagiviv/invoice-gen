@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { generatePDF } from "@/lib/pdf-generator"
+import { getNextInvoiceNumber, saveInvoice } from "@/lib/invoice-database"
 
 interface InvoiceItem {
   description: string
@@ -8,9 +9,6 @@ interface InvoiceItem {
   discount: string
   total: string
 }
-
-// Simple global counter for development
-let globalInvoiceCounter = 1
 
 export async function POST(request: NextRequest) {
   console.log("🚀 API route called at:", new Date().toISOString())
@@ -55,11 +53,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get current invoice number and increment
-    const currentInvoiceNumber = globalInvoiceCounter
-    globalInvoiceCounter++
-
+    // Get current invoice number from database
+    const currentInvoiceNumber = getNextInvoiceNumber()
     console.log("📄 Generating invoice #", currentInvoiceNumber)
+
+    // Calculate total amount
+    const totalAmount = items.reduce((sum: number, item: InvoiceItem) => {
+      return sum + Number.parseFloat(item.total || "0")
+    }, 0)
 
     // Generate PDF
     const pdfBuffer = await generatePDF({
@@ -75,6 +76,22 @@ export async function POST(request: NextRequest) {
     })
 
     console.log("✅ PDF generated successfully, size:", pdfBuffer.length)
+
+    // Save invoice to database
+    const savedInvoice = saveInvoice({
+      invoiceNumber: currentInvoiceNumber,
+      clientEmail,
+      buyerName,
+      clientAddress,
+      regCode,
+      invoiceDate,
+      dueDate,
+      isPaid,
+      items,
+      totalAmount,
+    })
+
+    console.log("💾 Invoice saved to database with ID:", savedInvoice.id)
 
     // Create download URL
     const base64PDF = pdfBuffer.toString("base64")
@@ -92,15 +109,15 @@ export async function POST(request: NextRequest) {
       message,
       downloadUrl,
       invoiceNumber: currentInvoiceNumber,
-      nextInvoiceNumber: globalInvoiceCounter,
+      nextInvoiceNumber: getNextInvoiceNumber(),
+      savedInvoice: {
+        id: savedInvoice.id,
+        totalAmount: savedInvoice.totalAmount,
+        createdAt: savedInvoice.createdAt,
+      },
     })
   } catch (error) {
     console.error("❌ API route error:", error)
-
-    // Rollback counter on error
-    if (globalInvoiceCounter > 1) {
-      globalInvoiceCounter--
-    }
 
     return NextResponse.json(
       {
@@ -113,10 +130,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to get current counter
+// Get current invoice number
 export async function GET() {
-  return NextResponse.json({
-    nextInvoiceNumber: globalInvoiceCounter,
-    timestamp: Date.now(),
-  })
+  try {
+    const nextInvoiceNumber = getNextInvoiceNumber()
+    return NextResponse.json({
+      nextInvoiceNumber,
+      timestamp: Date.now(),
+    })
+  } catch (error) {
+    console.error("Error getting invoice number:", error)
+    return NextResponse.json({
+      nextInvoiceNumber: 1,
+      error: true,
+    })
+  }
 }
