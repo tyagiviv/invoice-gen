@@ -86,9 +86,10 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
 
   console.log("🚀 Starting PDF generation...")
 
-  // Add logo with better compatibility
+  // Add logo with enhanced debugging
   try {
     const logoBase64 = await getLogoBase64()
+    console.log("🖼️ Logo fetch result:", logoBase64 ? "Success" : "Failed")
 
     if (logoBase64) {
       try {
@@ -96,28 +97,43 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
         const logoHeight = 38
 
         console.log(`📸 Adding logo to PDF...`)
+        console.log(`📸 Logo data type: ${typeof logoBase64}`)
         console.log(`📸 Logo data length: ${logoBase64.length}`)
+        console.log(`📸 Logo data preview: ${logoBase64.substring(0, 50)}...`)
 
-        // Try PNG format first (most common)
-        try {
-          doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
-          console.log("✅ Logo added as PNG successfully!")
-        } catch (pngError) {
-          console.log("PNG failed, trying JPEG...", pngError.message)
-          try {
-            doc.addImage(logoBase64, "JPEG", 20, 15, logoWidth, logoHeight)
-            console.log("✅ Logo added as JPEG successfully!")
-          } catch (jpegError) {
-            console.log("JPEG failed, trying without format...", jpegError.message)
-            try {
-              // Try without specifying format - let jsPDF auto-detect
-              doc.addImage(`data:image/png;base64,${logoBase64}`, "PNG", 20, 15, logoWidth, logoHeight)
-              console.log("✅ Logo added with data URI successfully!")
-            } catch (finalError) {
-              console.log("❌ All logo formats failed:", finalError.message)
-              throw finalError
-            }
+        // Clean the base64 data more thoroughly
+        let cleanLogoData = logoBase64
+
+        // Remove any data URI prefixes
+        if (cleanLogoData.includes("data:image/")) {
+          const base64Index = cleanLogoData.indexOf("base64,")
+          if (base64Index !== -1) {
+            cleanLogoData = cleanLogoData.substring(base64Index + 7)
           }
+        }
+
+        // Remove any whitespace or newlines
+        cleanLogoData = cleanLogoData.replace(/\s/g, "")
+
+        console.log(`📸 Cleaned logo data length: ${cleanLogoData.length}`)
+
+        // Try different image formats
+        const formats = ["PNG", "JPEG", "JPG"]
+        let logoAdded = false
+
+        for (const format of formats) {
+          try {
+            doc.addImage(cleanLogoData, format, 20, 15, logoWidth, logoHeight)
+            console.log(`✅ Logo added successfully as ${format}!`)
+            logoAdded = true
+            break
+          } catch (formatError) {
+            console.log(`❌ ${format} format failed:`, formatError.message)
+          }
+        }
+
+        if (!logoAdded) {
+          throw new Error("All image formats failed")
         }
       } catch (logoError) {
         console.log("❌ Error adding logo to PDF:", logoError.message)

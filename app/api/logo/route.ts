@@ -15,6 +15,9 @@ export async function GET() {
       console.log("✅ Logo file read successfully")
       console.log("📏 File size:", logoBuffer.length, "bytes")
 
+      // More detailed file validation
+      console.log("🔍 File header (first 16 bytes):", logoBuffer.slice(0, 16).toString("hex"))
+
       // Validate PNG header
       const pngHeader = logoBuffer.slice(0, 8)
       const expectedPngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -23,23 +26,35 @@ export async function GET() {
         console.log("✅ Valid PNG file detected")
       } else {
         console.log("⚠️ File may not be a valid PNG")
-        console.log("File header:", pngHeader.toString("hex"))
+        console.log("Expected PNG header:", expectedPngHeader.toString("hex"))
+        console.log("Actual file header:", pngHeader.toString("hex"))
       }
 
-      // Convert to base64
+      // Convert to base64 with validation
       const base64 = logoBuffer.toString("base64")
+
+      // Validate base64
+      if (base64.length > 0 && base64.match(/^[A-Za-z0-9+/]*={0,2}$/)) {
+        console.log("✅ Valid base64 generated")
+      } else {
+        console.log("❌ Invalid base64 generated")
+      }
+
       const dataUri = `data:image/png;base64,${base64}`
 
       console.log("✅ Logo converted to base64")
       console.log("📏 Base64 length:", base64.length)
       console.log("📏 Data URI length:", dataUri.length)
+      console.log("🔍 Base64 preview:", base64.substring(0, 100) + "...")
 
       return NextResponse.json({
         success: true,
         logo: dataUri,
+        logoBase64Only: base64, // Add clean base64 without data URI
         size: logoBuffer.length,
         format: "PNG",
         base64Length: base64.length,
+        isValidPng: pngHeader.equals(expectedPngHeader),
       })
     } else {
       console.log("❌ Logo file not found at:", logoPath)

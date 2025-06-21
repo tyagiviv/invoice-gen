@@ -163,8 +163,8 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       console.log("📧 Sending invoice email to:", data.clientEmail)
 
       try {
-        const { sendInvoiceEmailSimple } = await import("@/lib/email-sender-simple")
-        const emailResult = await sendInvoiceEmailSimple(
+        const { sendInvoiceEmailSecure } = await import("@/lib/email-sender-secure")
+        const emailResult = await sendInvoiceEmailSecure(
           data.clientEmail,
           pdfBuffer,
           currentInvoiceNumber,
