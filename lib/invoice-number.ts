@@ -1,24 +1,31 @@
-import fs from "fs/promises"
-import path from "path"
+// This file should only run on the server side
+const invoiceCounter = 1
+let isInitialized = false
 
-const INVOICE_NUMBER_FILE = path.join(process.cwd(), "data", "invoice_number.json")
+// Simple in-memory storage that persists during server runtime
+// In production, you'd want to use a database
+const invoiceStorage = {
+  current: 1,
+}
 
 export async function getNextInvoiceNumber(): Promise<number> {
-  try {
-    // Ensure data directory exists
-    await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
-
-    // Try to read existing file
-    const data = await fs.readFile(INVOICE_NUMBER_FILE, "utf-8")
-    const { invoice_number } = JSON.parse(data)
-    return invoice_number + 1
-  } catch (error) {
-    // File doesn't exist, start with 1
-    return 1
+  // Initialize counter if not done yet
+  if (!isInitialized) {
+    // In a real app, you'd load this from a database
+    // For now, we'll use a simple counter that starts from 1
+    isInitialized = true
   }
+
+  const nextNumber = invoiceStorage.current
+  return nextNumber
 }
 
 export async function saveInvoiceNumber(invoiceNumber: number): Promise<void> {
-  await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
-  await fs.writeFile(INVOICE_NUMBER_FILE, JSON.stringify({ invoice_number: invoiceNumber }, null, 2))
+  // Save the invoice number to our storage
+  invoiceStorage.current = invoiceNumber + 1
+}
+
+// Get current invoice number without incrementing
+export async function getCurrentInvoiceNumber(): Promise<number> {
+  return invoiceStorage.current - 1
 }

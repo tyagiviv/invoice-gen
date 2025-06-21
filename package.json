@@ -1,5 +1,5 @@
 {
-  "name": "my-v0-project",
+  "name": "invoice-generator-web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,10 @@
     "start": "next start"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@hookform/resolvers": "^3.9.1",
+=======
+>>>>>>> dev
     "@radix-ui/react-accordion": "latest",
     "@radix-ui/react-alert-dialog": "latest",
     "@radix-ui/react-aspect-ratio": "latest",
@@ -37,11 +40,22 @@
     "@radix-ui/react-toggle": "latest",
     "@radix-ui/react-toggle-group": "latest",
     "@radix-ui/react-tooltip": "latest",
+<<<<<<< HEAD
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "latest",
     "date-fns": "4.1.0",
+=======
+    "@types/node": "^20",
+    "@types/nodemailer": "^6.4.14",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "latest",
+>>>>>>> dev
     "embla-carousel-react": "latest",
     "fs": "latest",
     "input-otp": "latest",
@@ -52,6 +66,7 @@
     "next-themes": "latest",
     "nodemailer": "latest",
     "path": "latest",
+    "qrcode": "^1.5.3",
     "react": "^19",
     "react-day-picker": "latest",
     "react-dom": "^19",
@@ -60,16 +75,22 @@
     "recharts": "latest",
     "sonner": "latest",
     "tailwind-merge": "^2.5.5",
+    "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
+<<<<<<< HEAD
     "vaul": "latest",
     "zod": "^3.24.1"
+=======
+    "typescript": "^5",
+    "vaul": "latest"
+>>>>>>> dev
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.16",
     "postcss": "^8.5",
-    "tailwindcss": "^3.4.17",
     "typescript": "^5"
   }
 }

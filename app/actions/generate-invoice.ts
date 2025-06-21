@@ -1,7 +1,6 @@
 "use server"
 
 import { generatePDF } from "@/lib/pdf-generator"
-import { getNextInvoiceNumber, saveInvoiceNumber } from "@/lib/invoice-number"
 
 interface InvoiceItem {
   description: string
@@ -11,116 +10,232 @@ interface InvoiceItem {
   total: string
 }
 
+// Use a more persistent counter approach for development
+const getInvoiceCounter = () => {
+  if (typeof globalThis !== "undefined") {
+    if (!globalThis.__invoiceCounter) {
+      globalThis.__invoiceCounter = 1
+    }
+    return globalThis.__invoiceCounter
+  }
+  return 1
+}
+
+const setInvoiceCounter = (value: number) => {
+  if (typeof globalThis !== "undefined") {
+    globalThis.__invoiceCounter = value
+  }
+}
+
 export async function generateInvoice(prevState: any, formData: FormData) {
+  console.log("🚀 Server action called at:", new Date().toISOString())
+
   try {
-    // Extract form data
-    const clientEmail = formData.get("clientEmail") as string
-    const buyerName = (formData.get("buyerName") as string) || "ERAISIK"
-    const clientAddress = formData.get("clientAddress") as string
-    const regCode = formData.get("regCode") as string
-    const invoiceDate = formData.get("invoiceDate") as string
-    const dueDate = formData.get("dueDate") as string
-    const isPaid = formData.get("isPaid") === "on"
+    // Add a small delay to prevent race conditions in development
+    if (process.env.NODE_ENV === "development") {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    // Extract form data with better error handling
+    const extractFormData = () => {
+      try {
+        return {
+          clientEmail: formData.get("clientEmail")?.toString() || "",
+          buyerName: formData.get("buyerName")?.toString() || "ERAISIK",
+          clientAddress: formData.get("clientAddress")?.toString() || "",
+          regCode: formData.get("regCode")?.toString() || "",
+          invoiceDate: formData.get("invoiceDate")?.toString(),
+          dueDate: formData.get("dueDate")?.toString(),
+          isPaid: formData.get("isPaid") === "on",
+        }
+      } catch (error) {
+        console.error("Error extracting form data:", error)
+        throw new Error("Invalid form data")
+      }
+    }
+
+    const data = extractFormData()
+    console.log("📝 Form data extracted:", {
+      buyerName: data.buyerName,
+      invoiceDate: data.invoiceDate,
+      dueDate: data.dueDate,
+    })
 
     // Validate required fields
-    if (!invoiceDate || !dueDate) {
+    if (!data.invoiceDate || !data.dueDate) {
+      console.log("❌ Missing required dates")
       return {
         success: false,
         error: true,
         message: "Invoice date and due date are required",
+        timestamp: Date.now(),
       }
     }
 
-    // Validate email if provided
-    if (clientEmail && !isValidEmail(clientEmail)) {
-      return {
-        success: false,
-        error: true,
-        message: "Invalid email format",
+    // Extract items with better error handling
+    const extractItems = (): InvoiceItem[] => {
+      const items: InvoiceItem[] = []
+      let itemIndex = 0
+
+      try {
+        while (itemIndex < 50) {
+          // Safety limit
+          const description = formData.get(`items[${itemIndex}].description`)?.toString()
+          if (!description) break
+
+          const unitPrice = formData.get(`items[${itemIndex}].unitPrice`)?.toString() || "0"
+          const quantity = formData.get(`items[${itemIndex}].quantity`)?.toString() || "1"
+          const discount = formData.get(`items[${itemIndex}].discount`)?.toString() || "0"
+          const total = formData.get(`items[${itemIndex}].total`)?.toString() || "0"
+
+          if (description.trim()) {
+            items.push({
+              description: description.trim(),
+              unitPrice,
+              quantity,
+              discount,
+              total,
+            })
+          }
+          itemIndex++
+        }
+      } catch (error) {
+        console.error("Error extracting items:", error)
+        throw new Error("Invalid item data")
       }
+
+      return items
     }
 
-    // Extract items
-    const items: InvoiceItem[] = []
-    let itemIndex = 0
-
-    while (formData.get(`items[${itemIndex}].description`) !== null) {
-      const description = formData.get(`items[${itemIndex}].description`) as string
-      const unitPrice = formData.get(`items[${itemIndex}].unitPrice`) as string
-      const quantity = formData.get(`items[${itemIndex}].quantity`) as string
-      const discount = formData.get(`items[${itemIndex}].discount`) as string
-      const total = formData.get(`items[${itemIndex}].total`) as string
-
-      if (description.trim()) {
-        items.push({
-          description: description.trim(),
-          unitPrice: unitPrice || "0",
-          quantity: quantity || "1",
-          discount: discount || "0",
-          total: total || "0",
-        })
-      }
-      itemIndex++
-    }
+    const items = extractItems()
+    console.log("📦 Items extracted:", items.length)
 
     if (items.length === 0) {
+      console.log("❌ No items found")
       return {
         success: false,
         error: true,
         message: "At least one item is required",
+        timestamp: Date.now(),
       }
     }
 
-    // Get next invoice number
-    const invoiceNumber = await getNextInvoiceNumber()
+    // Get and increment invoice number atomically
+    const currentInvoiceNumber = getInvoiceCounter()
+    setInvoiceCounter(currentInvoiceNumber + 1)
 
-    // Generate PDF
-    const pdfBuffer = await generatePDF({
-      invoiceNumber,
-      clientEmail,
-      buyerName,
-      clientAddress,
-      regCode,
-      invoiceDate,
-      dueDate,
-      isPaid,
-      items,
-    })
+    console.log("📄 Generating invoice #", currentInvoiceNumber)
 
-    // Save invoice number
-    await saveInvoiceNumber(invoiceNumber)
+    // Generate PDF with timeout protection
+    const generatePDFWithTimeout = async () => {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("PDF generation timeout")), 30000)
+      })
+
+      const pdfPromise = generatePDF({
+        invoiceNumber: currentInvoiceNumber,
+        clientEmail: data.clientEmail,
+        buyerName: data.buyerName,
+        clientAddress: data.clientAddress,
+        regCode: data.regCode,
+        invoiceDate: data.invoiceDate!,
+        dueDate: data.dueDate!,
+        isPaid: data.isPaid,
+        items,
+      })
+
+      return Promise.race([pdfPromise, timeoutPromise])
+    }
+
+    const pdfBuffer = await generatePDFWithTimeout()
+    console.log("✅ PDF generated successfully, size:", pdfBuffer.length)
 
     // Create download URL
     const base64PDF = pdfBuffer.toString("base64")
     const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-    // For now, we'll skip email sending to avoid runtime issues
-    // You can integrate with SendGrid, Resend, or similar service later
-    let message = "Invoice created successfully!"
-    if (clientEmail && clientEmail.trim()) {
-      message = `Invoice created successfully! Download the PDF and send it manually to ${clientEmail} for now. Email integration can be added later with a proper email service.`
+    let message = data.clientEmail
+      ? `Invoice #${currentInvoiceNumber} created! Download and send to ${data.clientEmail}`
+      : `Invoice #${currentInvoiceNumber} created successfully!`
+
+    // Send email if email address is provided
+    if (data.clientEmail && data.clientEmail.trim()) {
+      console.log("📧 Sending invoice email to:", data.clientEmail)
+
+      try {
+        const { sendInvoiceEmailSecure } = await import("@/lib/email-sender-secure")
+        const emailResult = await sendInvoiceEmailSecure(
+          data.clientEmail,
+          pdfBuffer,
+          currentInvoiceNumber,
+          data.buyerName,
+          "manual",
+        )
+
+        if (emailResult.success) {
+          console.log("✅ Email sent successfully")
+          message = `Invoice #${currentInvoiceNumber} created and emailed to ${data.clientEmail}!`
+        } else {
+          console.log("⚠️ Email sending failed:", emailResult.message)
+          message = `Invoice #${currentInvoiceNumber} created! Email sending failed: ${emailResult.message}`
+        }
+      } catch (emailError) {
+        console.error("❌ Email error:", emailError)
+        message = `Invoice #${currentInvoiceNumber} created! Email error: ${emailError.message}`
+      }
+    } else {
+      message = `Invoice #${currentInvoiceNumber} created successfully!`
     }
 
-    return {
+    console.log("✅ Invoice generation completed successfully")
+
+    // Return success response
+    const response = {
       success: true,
       error: false,
       message,
       downloadUrl,
-      invoiceNumber,
-      emailSent: false,
-      shouldReset: true, // Add this flag
+      invoiceNumber: currentInvoiceNumber,
+      nextInvoiceNumber: getInvoiceCounter(),
+      shouldReset: true,
+      timestamp: Date.now(),
     }
+
+    console.log("📤 Returning response:", {
+      success: response.success,
+      invoiceNumber: response.invoiceNumber,
+      nextInvoiceNumber: response.nextInvoiceNumber,
+    })
+
+    return response
   } catch (error) {
-    console.error("Error generating invoice:", error)
-    return {
+    console.error("❌ Server action error:", error)
+
+    // Rollback counter on error
+    const currentCounter = getInvoiceCounter()
+    if (currentCounter > 1) {
+      setInvoiceCounter(currentCounter - 1)
+    }
+
+    // Return safe error response
+    const errorResponse = {
       success: false,
       error: true,
-      message: `Failed to generate invoice: ${error instanceof Error ? error.message : "Unknown error"}`,
+      message: error instanceof Error ? error.message : "Unknown error occurred",
+      timestamp: Date.now(),
     }
+
+    console.log("📤 Returning error response:", errorResponse)
+    return errorResponse
   }
 }
 
-function isValidEmail(email: string): boolean {
-  const pattern = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/
-  return pattern.test(email)
+// Helper function to get current counter
+export async function getCurrentInvoiceNumber() {
+  return getInvoiceCounter()
+}
+
+// Add global type declaration
+declare global {
+  var __invoiceCounter: number | undefined
 }

@@ -1,5 +1,5 @@
 import jsPDF from "jspdf"
-import "jspdf-autotable"
+import autoTable from "jspdf-autotable"
 
 interface InvoiceItem {
   description: string
@@ -26,19 +26,57 @@ let cachedLogoBase64: string | null = null
 
 async function getLogoBase64(): Promise<string | null> {
   if (cachedLogoBase64) {
+    console.log("Using cached logo")
     return cachedLogoBase64
   }
 
   try {
-    const logoResponse = await fetch("/logo.png")
-    if (!logoResponse.ok) {
-      throw new Error("Logo not found")
+    console.log("Fetching logo from API...")
+
+    // Determine the base URL for the API call
+    const baseUrl =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000"
+
+    const response = await fetch(`${baseUrl}/api/logo`)
+
+    if (response.ok) {
+      const data = await response.json()
+      console.log("Logo API response:", {
+        success: data.success,
+        hasLogo: !!data.logo,
+        hasPlaceholder: !!data.placeholder,
+      })
+
+      if (data.success && data.logo) {
+        // Clean the base64 data - remove data URI prefix for jsPDF
+        let logoData = data.logo
+        if (logoData.startsWith("data:image/png;base64,")) {
+          logoData = logoData.replace("data:image/png;base64,", "")
+        } else if (logoData.startsWith("data:image/jpeg;base64,")) {
+          logoData = logoData.replace("data:image/jpeg;base64,", "")
+        }
+
+        cachedLogoBase64 = logoData
+        console.log("✅ Logo loaded successfully, cleaned base64 length:", logoData.length)
+        return cachedLogoBase64
+      } else if (data.placeholder) {
+        console.log("⚠️ Using placeholder logo from API")
+        let placeholderData = data.placeholder
+        if (placeholderData.startsWith("data:image/svg+xml;base64,")) {
+          placeholderData = placeholderData.replace("data:image/svg+xml;base64,", "")
+        }
+        cachedLogoBase64 = placeholderData
+        return cachedLogoBase64
+      }
     }
-    const logoBlob = await logoResponse.blob()
-    cachedLogoBase64 = await blobToBase64(logoBlob)
-    return cachedLogoBase64
+
+    return null
   } catch (error) {
-    console.log("Failed to load logo:", error)
+    console.log("❌ Error fetching logo:", error)
     return null
   }
 }
@@ -46,11 +84,80 @@ async function getLogoBase64(): Promise<string | null> {
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
 
-  // Add logo (simple approach without clipping issues)
-  const logoBase64 = await getLogoBase64()
-  if (logoBase64) {
-    // Add the logo image normally - it should maintain its circular appearance from the PNG
-    doc.addImage(logoBase64, "PNG", 20, 15, 30, 30) // x, y, width, height
+  console.log("🚀 Starting PDF generation...")
+
+  // Add logo with enhanced debugging
+  try {
+    const logoBase64 = await getLogoBase64()
+    console.log("🖼️ Logo fetch result:", logoBase64 ? "Success" : "Failed")
+
+    if (logoBase64) {
+      try {
+        const logoWidth = 45
+        const logoHeight = 38
+
+        console.log(`📸 Adding logo to PDF...`)
+        console.log(`📸 Logo data type: ${typeof logoBase64}`)
+        console.log(`📸 Logo data length: ${logoBase64.length}`)
+        console.log(`📸 Logo data preview: ${logoBase64.substring(0, 50)}...`)
+
+        // Clean the base64 data more thoroughly
+        let cleanLogoData = logoBase64
+
+        // Remove any data URI prefixes
+        if (cleanLogoData.includes("data:image/")) {
+          const base64Index = cleanLogoData.indexOf("base64,")
+          if (base64Index !== -1) {
+            cleanLogoData = cleanLogoData.substring(base64Index + 7)
+          }
+        }
+
+        // Remove any whitespace or newlines
+        cleanLogoData = cleanLogoData.replace(/\s/g, "")
+
+        console.log(`📸 Cleaned logo data length: ${cleanLogoData.length}`)
+
+        // Try different image formats
+        const formats = ["PNG", "JPEG", "JPG"]
+        let logoAdded = false
+
+        for (const format of formats) {
+          try {
+            doc.addImage(cleanLogoData, format, 20, 15, logoWidth, logoHeight)
+            console.log(`✅ Logo added successfully as ${format}!`)
+            logoAdded = true
+            break
+          } catch (formatError) {
+            console.log(`❌ ${format} format failed:`, formatError.message)
+          }
+        }
+
+        if (!logoAdded) {
+          throw new Error("All image formats failed")
+        }
+      } catch (logoError) {
+        console.log("❌ Error adding logo to PDF:", logoError.message)
+        // Add text fallback
+        doc.setFontSize(12)
+        doc.setFont("helvetica", "bold")
+        doc.text("LapaDuu OÜ", 20, 30)
+        console.log("📝 Added text fallback instead")
+      }
+    } else {
+      console.log("❌ No logo data received")
+      // Add text fallback
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.text("LapaDuu OÜ", 20, 30)
+      console.log("📝 Added text fallback - no logo data")
+    }
+  } catch (logoFetchError) {
+    console.log("❌ Error fetching logo:", logoFetchError.message)
+    // Add text fallback
+    doc.setFontSize(12)
+    doc.setFont("helvetica", "bold")
+    doc.text("LapaDuu OÜ", 20, 30)
+    console.log("📝 Added text fallback - fetch error")
   }
 
   // Add company name on the right
@@ -58,7 +165,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   doc.setFont("helvetica", "bold")
   doc.text("LapaDuu OÜ", 120, 30)
 
-  // Add PAID label if invoice is paid (positioned after company name)
+  // Add PAID label if invoice is paid
   if (data.isPaid) {
     doc.setTextColor(0, 128, 0) // Green color
     doc.setFontSize(16)
@@ -66,10 +173,10 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
     doc.setTextColor(0, 0, 0) // Reset to black
   }
 
-  // Client information (left side) - moved down to accommodate logo
+  // Client information (left side)
   doc.setFontSize(10)
   doc.setFont("helvetica", "normal")
-  let yPos = 70
+  let yPos = 75
   doc.text(`Klient: ${data.buyerName}`, 20, yPos)
   doc.text(`Address: ${data.clientAddress}`, 20, yPos + 10)
   doc.text(`Reg kood: ${data.regCode}`, 20, yPos + 20)
@@ -81,7 +188,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   doc.text("Viivis: 0,15% päevas", 120, yPos + 30)
 
   // Items table
-  yPos = 120
+  yPos = 125
   const tableData = data.items.map((item) => {
     const hasDiscount = Number.parseFloat(item.discount) > 0
     const hasAnyDiscount = data.items.some((i) => Number.parseFloat(i.discount) > 0)
@@ -108,7 +215,9 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const headers = hasDiscounts
     ? ["Teenus/kaup", "Ühiku hind", "Kogus/h", "Discount (%)", "Summa"]
     : ["Teenus/kaup", "Ühiku hind", "Kogus/h", "Summa"]
-  ;(doc as any).autoTable({
+
+  // Use autoTable with proper import
+  autoTable(doc, {
     head: [headers],
     body: tableData,
     startY: yPos,
@@ -133,23 +242,8 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   // Add footer with company details
   addFooter(doc)
 
+  console.log("✅ PDF generation completed")
   return Buffer.from(doc.output("arraybuffer"))
-}
-
-// Helper function to convert blob to base64
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-      } else {
-        reject(new Error("Failed to convert blob to base64"))
-      }
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
 }
 
 function addFooter(doc: jsPDF) {

@@ -25,3 +25,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+<<<<<<< HEAD
+=======
+
+# IMPORTANT: Keep config.ini private!
+config.ini
+config.*.ini
+
+# Keep invoice data private
+/data/invoices.json
+/data/invoice_number.json
+
+# Keep uploaded logos private
+/public/logo.png
+/public/logo.jpg
+/public/logo.jpeg
+>>>>>>> dev
