@@ -23,7 +23,6 @@ interface InvoiceItem {
 export default function InvoiceForm() {
   const [state, formAction, isPending] = useActionState(generateInvoice, null)
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState<number>(1)
-  const [isLoadingNumber, setIsLoadingNumber] = useState(true)
 
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "", unitPrice: "", quantity: "", discount: "", total: "" },
@@ -35,18 +34,15 @@ export default function InvoiceForm() {
   const [clientAddress, setClientAddress] = useState("")
   const [regCode, setRegCode] = useState("")
 
-  // Load next invoice number from server
+  // Load next invoice number from API
   const loadNextInvoiceNumber = async () => {
     try {
-      setIsLoadingNumber(true)
       const response = await fetch("/api/invoice-number")
       const data = await response.json()
       setNextInvoiceNumber(data.nextInvoiceNumber)
     } catch (error) {
       console.error("Failed to load invoice number:", error)
       setNextInvoiceNumber(1)
-    } finally {
-      setIsLoadingNumber(false)
     }
   }
 
@@ -55,12 +51,16 @@ export default function InvoiceForm() {
     loadNextInvoiceNumber()
   }, [])
 
-  // Reset form and reload invoice number after successful generation
+  // Reset form and update invoice number after successful generation
   useEffect(() => {
     if (state?.success && state?.shouldReset) {
       resetForm()
-      // Reload the next invoice number from server
-      loadNextInvoiceNumber()
+      // Update the next invoice number from the response
+      if (state.nextInvoiceNumber) {
+        setNextInvoiceNumber(state.nextInvoiceNumber)
+      } else {
+        loadNextInvoiceNumber()
+      }
     }
   }, [state])
 
@@ -127,9 +127,7 @@ export default function InvoiceForm() {
     <div className="container mx-auto py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-center">Invoice Generator</h1>
-        <p className="text-center text-gray-600 mt-2">
-          Next Invoice Number: #{isLoadingNumber ? "Loading..." : nextInvoiceNumber}
-        </p>
+        <p className="text-center text-gray-600 mt-2">Next Invoice Number: #{nextInvoiceNumber}</p>
       </div>
 
       <form action={formAction} className="space-y-6">
@@ -304,7 +302,7 @@ export default function InvoiceForm() {
 
         {/* Submit Button */}
         <div className="flex justify-center">
-          <Button type="submit" disabled={isPending || isLoadingNumber} className="w-full md:w-auto px-8 py-3">
+          <Button type="submit" disabled={isPending} className="w-full md:w-auto px-8 py-3">
             {isPending ? "Generating Invoice..." : "Generate Invoice"}
           </Button>
         </div>

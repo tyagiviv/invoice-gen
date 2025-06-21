@@ -1,7 +1,6 @@
 "use server"
 
 import { generatePDF } from "@/lib/pdf-generator"
-import { getNextInvoiceNumber, saveInvoiceNumber } from "@/lib/invoice-number"
 
 interface InvoiceItem {
   description: string
@@ -10,6 +9,9 @@ interface InvoiceItem {
   discount: string
   total: string
 }
+
+// Simple server-side counter
+let serverInvoiceCounter = 1
 
 export async function generateInvoice(prevState: any, formData: FormData) {
   try {
@@ -71,8 +73,8 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       }
     }
 
-    // Get next invoice number from persistent storage
-    const invoiceNumber = await getNextInvoiceNumber()
+    // Get next invoice number
+    const invoiceNumber = serverInvoiceCounter++
 
     // Generate PDF
     const pdfBuffer = await generatePDF({
@@ -86,9 +88,6 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       isPaid,
       items,
     })
-
-    // Save the invoice number to persistent storage
-    await saveInvoiceNumber(invoiceNumber)
 
     // Create download URL
     const base64PDF = pdfBuffer.toString("base64")
@@ -107,6 +106,7 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       invoiceNumber,
       emailSent: false,
       shouldReset: true,
+      nextInvoiceNumber: serverInvoiceCounter, // Send next number for UI update
     }
   } catch (error) {
     console.error("Error generating invoice:", error)

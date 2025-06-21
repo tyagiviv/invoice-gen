@@ -1,12 +1,24 @@
 import { NextResponse } from "next/server"
-import { getNextInvoiceNumber } from "@/lib/invoice-number"
+
+// Simple server-side counter
+let invoiceCounter = 1
 
 export async function GET() {
   try {
-    const nextNumber = await getNextInvoiceNumber()
-    return NextResponse.json({ nextInvoiceNumber: nextNumber })
+    return NextResponse.json({ nextInvoiceNumber: invoiceCounter })
   } catch (error) {
     console.error("Error getting invoice number:", error)
     return NextResponse.json({ nextInvoiceNumber: 1 })
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const { invoiceNumber } = await request.json()
+    invoiceCounter = invoiceNumber + 1
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error saving invoice number:", error)
+    return NextResponse.json({ success: false })
   }
 }
