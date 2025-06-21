@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server"
-import { getCurrentInvoiceNumber } from "@/app/actions/generate-invoice"
 
 export async function GET() {
   try {
-    const nextInvoiceNumber = await getCurrentInvoiceNumber()
+    // This will now use the same counter as the generate-invoice API
+    const response = await fetch(`${process.env.VERCEL_URL || "http://localhost:3000"}/api/generate-invoice`, {
+      method: "GET",
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      return NextResponse.json(data)
+    }
 
     return NextResponse.json({
-      nextInvoiceNumber,
+      nextInvoiceNumber: 1,
       timestamp: Date.now(),
     })
   } catch (error) {

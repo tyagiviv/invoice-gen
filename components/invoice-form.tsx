@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,8 +10,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Trash2, Info } from "lucide-react"
-import { generateInvoice } from "@/app/actions/generate-invoice"
-import { useActionState } from "react"
 
 interface InvoiceItem {
   id: string
@@ -20,11 +20,20 @@ interface InvoiceItem {
   total: string
 }
 
+interface ApiResponse {
+  success: boolean
+  error: boolean
+  message: string
+  downloadUrl?: string
+  invoiceNumber?: number
+  nextInvoiceNumber?: number
+}
+
 export default function InvoiceForm() {
-  const [state, formAction, isPending] = useActionState(generateInvoice, null)
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState<number>(1)
   const [isLoading, setIsLoading] = useState(false)
-  const [lastSuccessTimestamp, setLastSuccessTimestamp] = useState<number>(0)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [lastResponse, setLastResponse] = useState<ApiResponse | null>(null)
 
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "", unitPrice: "", quantity: "1", discount: "0", total: "0" },
@@ -38,34 +47,25 @@ export default function InvoiceForm() {
   const [invoiceDate, setInvoiceDate] = useState(getCurrentDate())
   const [dueDate, setDueDate] = useState(getDueDate())
 
-  // Load next invoice number with retry logic
-  const loadNextInvoiceNumber = useCallback(async (retryCount = 0) => {
+  // Load next invoice number
+  const loadNextInvoiceNumber = useCallback(async () => {
     try {
       setIsLoading(true)
-      console.log("📊 Loading invoice number, attempt:", retryCount + 1)
+      console.log("📊 Loading invoice number...")
 
-      const response = await fetch(`/api/invoice-number?t=${Date.now()}`, {
+      const response = await fetch("/api/generate-invoice", {
+        method: "GET",
         cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
       })
 
       if (response.ok) {
         const data = await response.json()
         setNextInvoiceNumber(data.nextInvoiceNumber)
         console.log("📊 Loaded invoice number:", data.nextInvoiceNumber)
-      } else if (retryCount < 2) {
-        // Retry up to 3 times
-        setTimeout(() => loadNextInvoiceNumber(retryCount + 1), 1000)
       }
     } catch (error) {
       console.error("Failed to load invoice number:", error)
-      if (retryCount < 2) {
-        setTimeout(() => loadNextInvoiceNumber(retryCount + 1), 1000)
-      } else {
-        setNextInvoiceNumber(1)
-      }
+      setNextInvoiceNumber(1)
     } finally {
       setIsLoading(false)
     }
@@ -75,26 +75,6 @@ export default function InvoiceForm() {
   useEffect(() => {
     loadNextInvoiceNumber()
   }, [loadNextInvoiceNumber])
-
-  // Handle successful generation with better state management
-  useEffect(() => {
-    if (state?.success && state?.shouldReset && state?.timestamp !== lastSuccessTimestamp) {
-      console.log("🔄 Resetting form after success, timestamp:", state.timestamp)
-      setLastSuccessTimestamp(state.timestamp)
-
-      // Reset form immediately
-      resetForm()
-
-      // Update invoice number
-      if (state.nextInvoiceNumber) {
-        setNextInvoiceNumber(state.nextInvoiceNumber)
-        console.log("📊 Updated to next invoice number:", state.nextInvoiceNumber)
-      } else {
-        // Fallback: reload from API after a delay
-        setTimeout(() => loadNextInvoiceNumber(), 500)
-      }
-    }
-  }, [state, lastSuccessTimestamp, loadNextInvoiceNumber])
 
   // Handle paid status change
   useEffect(() => {
@@ -106,6 +86,91 @@ export default function InvoiceForm() {
       setDueDate(date.toISOString().split("T")[0])
     }
   }, [isPaid, invoiceDate])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsGenerating(true)
+    setLastResponse(null)
+
+    try {
+      console.log("🚀 Submitting form...")
+
+      // Validate form
+      if (!invoiceDate || !dueDate) {
+        setLastResponse({
+          success: false,
+          error: true,
+          message: "Invoice date and due date are required",
+        })
+        return
+      }
+
+      const validItems = items.filter((item) => item.description.trim())
+      if (validItems.length === 0) {
+        setLastResponse({
+          success: false,
+          error: true,
+          message: "At least one item is required",
+        })
+        return
+      }
+
+      // Prepare data
+      const requestData = {
+        clientEmail,
+        buyerName: buyerName || "ERAISIK",
+        clientAddress,
+        regCode,
+        invoiceDate,
+        dueDate,
+        isPaid,
+        items: validItems.map((item) => ({
+          description: item.description,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+          discount: item.discount,
+          total: item.total,
+        })),
+      }
+
+      console.log("📤 Sending request with", validItems.length, "items")
+
+      // Make API call
+      const response = await fetch("/api/generate-invoice", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      const data: ApiResponse = await response.json()
+      console.log("📥 Received response:", { success: data.success, hasDownload: !!data.downloadUrl })
+
+      setLastResponse(data)
+
+      if (data.success) {
+        // Reset form on success
+        resetForm()
+        // Update next invoice number
+        if (data.nextInvoiceNumber) {
+          setNextInvoiceNumber(data.nextInvoiceNumber)
+        } else {
+          // Fallback: reload from API
+          setTimeout(loadNextInvoiceNumber, 500)
+        }
+      }
+    } catch (error) {
+      console.error("❌ Form submission error:", error)
+      setLastResponse({
+        success: false,
+        error: true,
+        message: error instanceof Error ? error.message : "Network error occurred",
+      })
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
   const resetForm = () => {
     console.log("🔄 Resetting form...")
@@ -184,11 +249,11 @@ export default function InvoiceForm() {
         <h1 className="text-3xl font-bold text-center">Invoice Generator</h1>
         <p className="text-center text-gray-600 mt-2">
           Next Invoice Number: #{isLoading ? "..." : nextInvoiceNumber}
-          {process.env.NODE_ENV === "development" && <span className="text-xs text-orange-500 ml-2">(Dev Mode)</span>}
+          <span className="text-xs text-green-500 ml-2">(API Mode)</span>
         </p>
       </div>
 
-      <form action={formAction} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
         {/* Client Information */}
         <Card>
           <CardHeader>
@@ -304,7 +369,6 @@ export default function InvoiceForm() {
                 <div key={item.id} className="grid grid-cols-12 gap-2 items-start">
                   <div className="col-span-4">
                     <Textarea
-                      name={`items[${index}].description`}
                       value={item.description}
                       onChange={(e) => updateItem(item.id, "description", e.target.value)}
                       placeholder="Service/Product description"
@@ -313,7 +377,6 @@ export default function InvoiceForm() {
                   </div>
                   <div className="col-span-2">
                     <Input
-                      name={`items[${index}].unitPrice`}
                       type="number"
                       step="0.01"
                       value={item.unitPrice}
@@ -323,7 +386,6 @@ export default function InvoiceForm() {
                   </div>
                   <div className="col-span-2">
                     <Input
-                      name={`items[${index}].quantity`}
                       type="number"
                       step="0.01"
                       value={item.quantity}
@@ -333,7 +395,6 @@ export default function InvoiceForm() {
                   </div>
                   <div className="col-span-2">
                     <Input
-                      name={`items[${index}].discount`}
                       type="number"
                       step="0.01"
                       value={item.discount}
@@ -342,7 +403,7 @@ export default function InvoiceForm() {
                     />
                   </div>
                   <div className="col-span-1">
-                    <Input name={`items[${index}].total`} value={item.total} readOnly className="bg-gray-50" />
+                    <Input value={item.total} readOnly className="bg-gray-50" />
                   </div>
                   <div className="col-span-1">
                     <Button
@@ -368,19 +429,19 @@ export default function InvoiceForm() {
 
         {/* Submit Button */}
         <div className="flex justify-center">
-          <Button type="submit" disabled={isPending || isLoading} className="w-full md:w-auto px-8 py-3">
-            {isPending ? "Generating Invoice..." : "Generate Invoice"}
+          <Button type="submit" disabled={isGenerating || isLoading} className="w-full md:w-auto px-8 py-3">
+            {isGenerating ? "Generating Invoice..." : "Generate Invoice"}
           </Button>
         </div>
 
         {/* Messages */}
-        {state?.success && (
+        {lastResponse?.success && (
           <div className="bg-green-50 border border-green-200 rounded-md p-4">
-            <p className="text-green-800">{state.message}</p>
-            {state.downloadUrl && (
+            <p className="text-green-800">{lastResponse.message}</p>
+            {lastResponse.downloadUrl && (
               <a
-                href={state.downloadUrl}
-                download={`Invoice_${state.invoiceNumber}.pdf`}
+                href={lastResponse.downloadUrl}
+                download={`Invoice_${lastResponse.invoiceNumber}.pdf`}
                 className="inline-block mt-2 text-green-600 hover:text-green-800 underline"
               >
                 Download Invoice PDF
@@ -389,10 +450,9 @@ export default function InvoiceForm() {
           </div>
         )}
 
-        {state?.error && (
+        {lastResponse?.error && (
           <div className="bg-red-50 border border-red-200 rounded-md p-4">
-            <p className="text-red-800">{state.message}</p>
-            <p className="text-sm text-red-600 mt-1">If this persists in development, try restarting the dev server.</p>
+            <p className="text-red-800">{lastResponse.message}</p>
           </div>
         )}
       </form>
