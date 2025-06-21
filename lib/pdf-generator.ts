@@ -23,38 +23,35 @@ interface InvoiceData {
 
 // Cache the logo to avoid repeated fetching
 let cachedLogoBase64: string | null = null
-let logoLoadAttempted = false
 
 async function getLogoBase64(): Promise<string | null> {
-  if (logoLoadAttempted && cachedLogoBase64) {
+  if (cachedLogoBase64) {
     return cachedLogoBase64
   }
-
-  if (logoLoadAttempted && !cachedLogoBase64) {
-    return null // Already tried and failed
-  }
-
-  logoLoadAttempted = true
 
   try {
-    const logoResponse = await fetch("/logo.png")
-    if (!logoResponse.ok) {
-      console.log("Logo not found, continuing without logo")
-      return null
+    // Try multiple logo paths to ensure we find it
+    const logoPaths = ["/logo.png", "/public/logo.png", "./logo.png"]
+
+    for (const logoPath of logoPaths) {
+      try {
+        const logoResponse = await fetch(logoPath)
+        if (logoResponse.ok) {
+          const logoBlob = await logoResponse.blob()
+          cachedLogoBase64 = await blobToBase64(logoBlob)
+          console.log(`Logo loaded successfully from: ${logoPath}`)
+          return cachedLogoBase64
+        }
+      } catch (pathError) {
+        console.log(`Failed to load logo from ${logoPath}:`, pathError)
+        continue
+      }
     }
 
-    const logoBlob = await logoResponse.blob()
-
-    // Validate that it's actually a PNG
-    if (!logoBlob.type.includes("image")) {
-      console.log("Invalid image type, continuing without logo")
-      return null
-    }
-
-    cachedLogoBase64 = await blobToBase64(logoBlob)
-    return cachedLogoBase64
+    console.log("Logo not found in any path, continuing without logo")
+    return null
   } catch (error) {
-    console.log("Failed to load logo, continuing without logo:", error)
+    console.log("Failed to load logo:", error)
     return null
   }
 }
@@ -62,17 +59,19 @@ async function getLogoBase64(): Promise<string | null> {
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
 
-  // Try to add logo, but continue without it if it fails
-  try {
-    const logoBase64 = await getLogoBase64()
-    if (logoBase64) {
+  // Add logo with proper error handling
+  const logoBase64 = await getLogoBase64()
+  if (logoBase64) {
+    try {
       const logoWidth = 45
       const logoHeight = 38
       doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
+      console.log("Logo added to PDF successfully")
+    } catch (logoError) {
+      console.log("Error adding logo to PDF:", logoError)
     }
-  } catch (error) {
-    console.log("Error adding logo to PDF, continuing without logo:", error)
-    // Continue without logo
+  } else {
+    console.log("No logo available, generating PDF without logo")
   }
 
   // Add company name on the right
