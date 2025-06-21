@@ -33,6 +33,8 @@ export default function InvoiceForm() {
   const [buyerName, setBuyerName] = useState("")
   const [clientAddress, setClientAddress] = useState("")
   const [regCode, setRegCode] = useState("")
+  const [invoiceDate, setInvoiceDate] = useState(getCurrentDate())
+  const [dueDate, setDueDate] = useState(getDueDate())
 
   // Load next invoice number from API
   const loadNextInvoiceNumber = async () => {
@@ -64,6 +66,33 @@ export default function InvoiceForm() {
     }
   }, [state])
 
+  // Handle paid status change - update due date automatically
+  useEffect(() => {
+    if (isPaid) {
+      // If marked as paid, set due date to invoice date
+      setDueDate(invoiceDate)
+    } else {
+      // If unmarked, set due date to 14 days from invoice date
+      const invoiceDateObj = new Date(invoiceDate)
+      invoiceDateObj.setDate(invoiceDateObj.getDate() + 14)
+      setDueDate(invoiceDateObj.toISOString().split("T")[0])
+    }
+  }, [isPaid, invoiceDate])
+
+  // Handle invoice date change - update due date accordingly
+  const handleInvoiceDateChange = (newDate: string) => {
+    setInvoiceDate(newDate)
+    if (isPaid) {
+      // If paid, due date should match invoice date
+      setDueDate(newDate)
+    } else {
+      // If not paid, due date should be 14 days later
+      const dateObj = new Date(newDate)
+      dateObj.setDate(dateObj.getDate() + 14)
+      setDueDate(dateObj.toISOString().split("T")[0])
+    }
+  }
+
   const resetForm = () => {
     setItems([{ id: Date.now().toString(), description: "", unitPrice: "", quantity: "", discount: "", total: "" }])
     setIsPaid(false)
@@ -71,6 +100,9 @@ export default function InvoiceForm() {
     setBuyerName("")
     setClientAddress("")
     setRegCode("")
+    const currentDate = getCurrentDate()
+    setInvoiceDate(currentDate)
+    setDueDate(getDueDate())
   }
 
   const addItem = () => {
@@ -113,11 +145,11 @@ export default function InvoiceForm() {
     )
   }
 
-  const getCurrentDate = () => {
+  function getCurrentDate() {
     return new Date().toISOString().split("T")[0]
   }
 
-  const getDueDate = () => {
+  function getDueDate() {
     const date = new Date()
     date.setDate(date.getDate() + 14)
     return date.toISOString().split("T")[0]
@@ -193,7 +225,14 @@ export default function InvoiceForm() {
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="invoiceDate">Invoice Date</Label>
-              <Input id="invoiceDate" name="invoiceDate" type="date" defaultValue={getCurrentDate()} required />
+              <Input
+                id="invoiceDate"
+                name="invoiceDate"
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => handleInvoiceDateChange(e.target.value)}
+                required
+              />
             </div>
             <div>
               <Label htmlFor="dueDate">Due Date</Label>
@@ -201,7 +240,8 @@ export default function InvoiceForm() {
                 id="dueDate"
                 name="dueDate"
                 type="date"
-                defaultValue={isPaid ? getCurrentDate() : getDueDate()}
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
                 required
               />
             </div>
