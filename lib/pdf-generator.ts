@@ -46,34 +46,33 @@ async function getLogoBase64(): Promise<string | null> {
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
 
-  // Add logo with proper dimensions matching Python version
+  // Add logo with smaller, more balanced dimensions
   const logoBase64 = await getLogoBase64()
   if (logoBase64) {
-    // Convert pixels to points (jsPDF uses points, ReportLab uses pixels)
-    // 1 pixel ≈ 0.75 points, so 100px ≈ 75pt, 85px ≈ 64pt
-    const logoWidth = 75 // 100 pixels converted to points
-    const logoHeight = 64 // 85 pixels converted to points
+    // Reduced size for better balance - about 60% of original Python size
+    const logoWidth = 45 // Reduced from 75
+    const logoHeight = 38 // Reduced from 64 (maintaining aspect ratio)
 
     doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
   }
 
-  // Add company name on the right - adjusted position to accommodate larger logo
+  // Add company name on the right - adjusted position for smaller logo
   doc.setFontSize(20)
   doc.setFont("helvetica", "bold")
-  doc.text("LapaDuu OÜ", 120, 35) // Moved down slightly for better alignment
+  doc.text("LapaDuu OÜ", 120, 30) // Moved back up slightly
 
-  // Add PAID label if invoice is paid (positioned after company name)
+  // Add PAID label if invoice is paid
   if (data.isPaid) {
     doc.setTextColor(0, 128, 0) // Green color
     doc.setFontSize(16)
-    doc.text("MAKSTUD", 120, 50) // Adjusted position
+    doc.text("MAKSTUD", 120, 45)
     doc.setTextColor(0, 0, 0) // Reset to black
   }
 
-  // Client information (left side) - moved down more to accommodate larger logo
+  // Client information (left side) - adjusted for smaller logo
   doc.setFontSize(10)
   doc.setFont("helvetica", "normal")
-  let yPos = 90 // Increased from 70 to give more space for larger logo
+  let yPos = 75 // Reduced from 90 since logo is smaller
   doc.text(`Klient: ${data.buyerName}`, 20, yPos)
   doc.text(`Address: ${data.clientAddress}`, 20, yPos + 10)
   doc.text(`Reg kood: ${data.regCode}`, 20, yPos + 20)
@@ -84,8 +83,8 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   doc.text(`Makse tähtaeg: ${data.dueDate}`, 120, yPos + 20)
   doc.text("Viivis: 0,15% päevas", 120, yPos + 30)
 
-  // Items table - moved down to accommodate larger header area
-  yPos = 140 // Increased from 120
+  // Items table - adjusted for smaller header
+  yPos = 125 // Reduced from 140
   const tableData = data.items.map((item) => {
     const hasDiscount = Number.parseFloat(item.discount) > 0
     const hasAnyDiscount = data.items.some((i) => Number.parseFloat(i.discount) > 0)
