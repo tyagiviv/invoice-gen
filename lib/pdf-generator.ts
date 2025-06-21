@@ -1,5 +1,7 @@
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { readFileSync } from "fs"
+import { join } from "path"
 
 interface InvoiceItem {
   description: string
@@ -21,7 +23,7 @@ interface InvoiceData {
   items: InvoiceItem[]
 }
 
-// Cache the logo to avoid repeated fetching
+// Cache the logo to avoid repeated reading
 let cachedLogoBase64: string | null = null
 
 async function getLogoBase64(): Promise<string | null> {
@@ -30,60 +32,47 @@ async function getLogoBase64(): Promise<string | null> {
   }
 
   try {
-    // For local development, try different approaches
-    const isLocal =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    // Since this runs on the server, we can use fs to read the file directly
+    const logoPath = join(process.cwd(), "public", "logo.png")
+    console.log("Attempting to read logo from:", logoPath)
 
-    console.log("Environment check - isLocal:", isLocal)
+    try {
+      const logoBuffer = readFileSync(logoPath)
+      console.log("Logo file read successfully, size:", logoBuffer.length, "bytes")
 
-    // Try multiple logo paths with full URLs for local development
-    const logoPaths = isLocal
-      ? [
-          `${window?.location?.origin}/logo.png`,
-          `${window?.location?.origin}/public/logo.png`,
-          "/logo.png",
-          "/public/logo.png",
-        ]
-      : ["/logo.png", "/public/logo.png"]
+      // Convert buffer to base64
+      cachedLogoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`
+      console.log("Logo converted to base64, length:", cachedLogoBase64.length)
+      return cachedLogoBase64
+    } catch (fsError) {
+      console.log("Failed to read logo file with fs:", fsError)
 
-    console.log("Trying logo paths:", logoPaths)
+      // Fallback: try alternative paths
+      const alternativePaths = [
+        join(process.cwd(), "logo.png"),
+        join(process.cwd(), "public", "placeholder-logo.png"),
+        join(process.cwd(), "assets", "logo.png"),
+      ]
 
-    for (const logoPath of logoPaths) {
-      try {
-        console.log(`Attempting to fetch logo from: ${logoPath}`)
-
-        const logoResponse = await fetch(logoPath, {
-          method: "GET",
-          headers: {
-            "Cache-Control": "no-cache",
-          },
-        })
-
-        console.log(`Response status for ${logoPath}:`, logoResponse.status)
-
-        if (logoResponse.ok) {
-          const logoBlob = await logoResponse.blob()
-          console.log(`Logo blob size: ${logoBlob.size} bytes`)
-
-          if (logoBlob.size > 0) {
-            cachedLogoBase64 = await blobToBase64(logoBlob)
-            console.log(`Logo loaded successfully from: ${logoPath}`)
-            console.log(`Base64 length: ${cachedLogoBase64.length}`)
-            return cachedLogoBase64
-          }
+      for (const altPath of alternativePaths) {
+        try {
+          console.log("Trying alternative path:", altPath)
+          const logoBuffer = readFileSync(altPath)
+          cachedLogoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`
+          console.log("Logo loaded from alternative path:", altPath)
+          return cachedLogoBase64
+        } catch (altError) {
+          console.log("Alternative path failed:", altPath, altError.message)
+          continue
         }
-      } catch (pathError) {
-        console.log(`Failed to load logo from ${logoPath}:`, pathError)
-        continue
       }
     }
 
-    // If all paths fail, try to create a simple placeholder
-    console.log("All logo paths failed, creating placeholder")
+    // If all file reading fails, create a simple placeholder
+    console.log("All file paths failed, creating placeholder logo")
     return createPlaceholderLogo()
   } catch (error) {
-    console.log("Failed to load logo:", error)
+    console.log("Error in getLogoBase64:", error)
     return createPlaceholderLogo()
   }
 }
@@ -93,15 +82,22 @@ function createPlaceholderLogo(): string {
   // Create a simple SVG logo as fallback
   const svgLogo = `
     <svg width="180" height="152" xmlns="http://www.w3.org/2000/svg">
-      <rect width="180" height="152" fill="#f0f0f0" stroke="#ccc" stroke-width="2"/>
-      <text x="90" y="80" text-anchor="middle" font-family="Arial" font-size="16" fill="#666">
-        LapaDuu OÜ
+      <rect width="180" height="152" fill="#e6f3ff" stroke="#0066cc" stroke-width="2" rx="8"/>
+      <text x="90" y="70" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#0066cc">
+        LapaDuu
+      </text>
+      <text x="90" y="95" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#0066cc">
+        OÜ
+      </text>
+      <circle cx="90" cy="120" r="15" fill="none" stroke="#0066cc" stroke-width="2"/>
+      <text x="90" y="125" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#0066cc">
+        EST
       </text>
     </svg>
   `
 
   // Convert SVG to base64
-  const base64Svg = btoa(unescape(encodeURIComponent(svgLogo)))
+  const base64Svg = Buffer.from(svgLogo).toString("base64")
   return `data:image/svg+xml;base64,${base64Svg}`
 }
 
@@ -222,22 +218,6 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
 
   console.log("PDF generation completed")
   return Buffer.from(doc.output("arraybuffer"))
-}
-
-// Helper function to convert blob to base64
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-      } else {
-        reject(new Error("Failed to convert blob to base64"))
-      }
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
 }
 
 function addFooter(doc: jsPDF) {
