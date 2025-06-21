@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,9 +23,10 @@ interface InvoiceItem {
 export default function InvoiceForm() {
   const [state, formAction, isPending] = useActionState(generateInvoice, null)
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState<number>(1)
+  const [isLoading, setIsLoading] = useState(false)
 
   const [items, setItems] = useState<InvoiceItem[]>([
-    { id: "1", description: "", unitPrice: "", quantity: "", discount: "", total: "" },
+    { id: "1", description: "", unitPrice: "", quantity: "1", discount: "0", total: "0" },
   ])
 
   const [isPaid, setIsPaid] = useState(false)
@@ -36,76 +37,71 @@ export default function InvoiceForm() {
   const [invoiceDate, setInvoiceDate] = useState(getCurrentDate())
   const [dueDate, setDueDate] = useState(getDueDate())
 
-  // Load next invoice number from API
-  const loadNextInvoiceNumber = async () => {
+  // Load next invoice number
+  const loadNextInvoiceNumber = useCallback(async () => {
     try {
-      const response = await fetch("/api/invoice-number?" + Date.now()) // Add timestamp to prevent caching
-      const data = await response.json()
-      setNextInvoiceNumber(data.nextInvoiceNumber)
-      console.log("📊 Loaded next invoice number:", data.nextInvoiceNumber)
+      setIsLoading(true)
+      const response = await fetch(`/api/invoice-number?t=${Date.now()}`)
+      if (response.ok) {
+        const data = await response.json()
+        setNextInvoiceNumber(data.nextInvoiceNumber)
+        console.log("📊 Loaded invoice number:", data.nextInvoiceNumber)
+      }
     } catch (error) {
       console.error("Failed to load invoice number:", error)
       setNextInvoiceNumber(1)
+    } finally {
+      setIsLoading(false)
     }
-  }
-
-  // Load invoice number on mount
-  useEffect(() => {
-    loadNextInvoiceNumber()
   }, [])
 
-  // Reset form and update invoice number after successful generation
+  // Load on mount
+  useEffect(() => {
+    loadNextInvoiceNumber()
+  }, [loadNextInvoiceNumber])
+
+  // Handle successful generation
   useEffect(() => {
     if (state?.success && state?.shouldReset) {
-      console.log("🔄 Resetting form after successful generation")
+      console.log("🔄 Resetting form after success")
       resetForm()
-      // Update the next invoice number from the response
       if (state.nextInvoiceNumber) {
         setNextInvoiceNumber(state.nextInvoiceNumber)
-        console.log("📊 Updated next invoice number to:", state.nextInvoiceNumber)
       } else {
-        loadNextInvoiceNumber()
+        // Fallback: reload from API
+        setTimeout(loadNextInvoiceNumber, 100)
       }
     }
-  }, [state])
+  }, [state, loadNextInvoiceNumber])
 
-  // Handle paid status change - update due date automatically
+  // Handle paid status change
   useEffect(() => {
     if (isPaid) {
-      // If marked as paid, set due date to invoice date
       setDueDate(invoiceDate)
     } else {
-      // If unmarked, set due date to 14 days from invoice date
-      const invoiceDateObj = new Date(invoiceDate)
-      invoiceDateObj.setDate(invoiceDateObj.getDate() + 14)
-      setDueDate(invoiceDateObj.toISOString().split("T")[0])
+      const date = new Date(invoiceDate)
+      date.setDate(date.getDate() + 14)
+      setDueDate(date.toISOString().split("T")[0])
     }
   }, [isPaid, invoiceDate])
 
-  // Handle invoice date change - update due date accordingly
-  const handleInvoiceDateChange = (newDate: string) => {
-    setInvoiceDate(newDate)
-    if (isPaid) {
-      // If paid, due date should match invoice date
-      setDueDate(newDate)
-    } else {
-      // If not paid, due date should be 14 days later
-      const dateObj = new Date(newDate)
-      dateObj.setDate(dateObj.getDate() + 14)
-      setDueDate(dateObj.toISOString().split("T")[0])
-    }
-  }
-
   const resetForm = () => {
-    console.log("🔄 Resetting form...")
-    setItems([{ id: Date.now().toString(), description: "", unitPrice: "", quantity: "", discount: "", total: "" }])
+    setItems([
+      {
+        id: Date.now().toString(),
+        description: "",
+        unitPrice: "",
+        quantity: "1",
+        discount: "0",
+        total: "0",
+      },
+    ])
     setIsPaid(false)
     setClientEmail("")
     setBuyerName("")
     setClientAddress("")
     setRegCode("")
-    const currentDate = getCurrentDate()
-    setInvoiceDate(currentDate)
+    setInvoiceDate(getCurrentDate())
     setDueDate(getDueDate())
   }
 
@@ -114,9 +110,9 @@ export default function InvoiceForm() {
       id: Date.now().toString(),
       description: "",
       unitPrice: "",
-      quantity: "",
-      discount: "",
-      total: "",
+      quantity: "1",
+      discount: "0",
+      total: "0",
     }
     setItems([...items, newItem])
   }
@@ -133,7 +129,7 @@ export default function InvoiceForm() {
         if (item.id === id) {
           const updatedItem = { ...item, [field]: value }
 
-          // Auto-calculate total when quantity, price, or discount changes
+          // Auto-calculate total
           if (field === "quantity" || field === "unitPrice" || field === "discount") {
             const qty = Number.parseFloat(updatedItem.quantity) || 1
             const price = Number.parseFloat(updatedItem.unitPrice) || 0
@@ -163,7 +159,7 @@ export default function InvoiceForm() {
     <div className="container mx-auto py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-center">Invoice Generator</h1>
-        <p className="text-center text-gray-600 mt-2">Next Invoice Number: #{nextInvoiceNumber}</p>
+        <p className="text-center text-gray-600 mt-2">Next Invoice Number: #{isLoading ? "..." : nextInvoiceNumber}</p>
       </div>
 
       <form action={formAction} className="space-y-6">
@@ -174,7 +170,7 @@ export default function InvoiceForm() {
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="clientEmail">Client Email (for reference only)</Label>
+              <Label htmlFor="clientEmail">Client Email (optional)</Label>
               <Input
                 id="clientEmail"
                 name="clientEmail"
@@ -185,7 +181,7 @@ export default function InvoiceForm() {
               />
               <div className="flex items-center mt-1 text-sm text-blue-600">
                 <Info className="h-4 w-4 mr-1" />
-                <span>Email will be saved but not sent automatically</span>
+                <span>For reference only - not sent automatically</span>
               </div>
             </div>
             <div>
@@ -193,7 +189,7 @@ export default function InvoiceForm() {
               <Input
                 id="buyerName"
                 name="buyerName"
-                placeholder="Enter buyer name or leave empty for 'ERAISIK'"
+                placeholder="Leave empty for 'ERAISIK'"
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
               />
@@ -203,7 +199,7 @@ export default function InvoiceForm() {
               <Input
                 id="clientAddress"
                 name="clientAddress"
-                placeholder="Enter client address"
+                placeholder="Client address"
                 value={clientAddress}
                 onChange={(e) => setClientAddress(e.target.value)}
               />
@@ -213,7 +209,7 @@ export default function InvoiceForm() {
               <Input
                 id="regCode"
                 name="regCode"
-                placeholder="Enter registration code"
+                placeholder="Registration code"
                 value={regCode}
                 onChange={(e) => setRegCode(e.target.value)}
               />
@@ -234,7 +230,7 @@ export default function InvoiceForm() {
                 name="invoiceDate"
                 type="date"
                 value={invoiceDate}
-                onChange={(e) => handleInvoiceDateChange(e.target.value)}
+                onChange={(e) => setInvoiceDate(e.target.value)}
                 required
               />
             </div>
@@ -346,12 +342,12 @@ export default function InvoiceForm() {
 
         {/* Submit Button */}
         <div className="flex justify-center">
-          <Button type="submit" disabled={isPending} className="w-full md:w-auto px-8 py-3">
+          <Button type="submit" disabled={isPending || isLoading} className="w-full md:w-auto px-8 py-3">
             {isPending ? "Generating Invoice..." : "Generate Invoice"}
           </Button>
         </div>
 
-        {/* Success/Error Messages */}
+        {/* Messages */}
         {state?.success && (
           <div className="bg-green-50 border border-green-200 rounded-md p-4">
             <p className="text-green-800">{state.message}</p>
