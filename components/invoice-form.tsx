@@ -24,6 +24,7 @@ export default function InvoiceForm() {
   const [state, formAction, isPending] = useActionState(generateInvoice, null)
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState<number>(1)
   const [isLoading, setIsLoading] = useState(false)
+  const [lastSuccessTimestamp, setLastSuccessTimestamp] = useState<number>(0)
 
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "", unitPrice: "", quantity: "1", discount: "0", total: "0" },
@@ -37,19 +38,34 @@ export default function InvoiceForm() {
   const [invoiceDate, setInvoiceDate] = useState(getCurrentDate())
   const [dueDate, setDueDate] = useState(getDueDate())
 
-  // Load next invoice number
-  const loadNextInvoiceNumber = useCallback(async () => {
+  // Load next invoice number with retry logic
+  const loadNextInvoiceNumber = useCallback(async (retryCount = 0) => {
     try {
       setIsLoading(true)
-      const response = await fetch(`/api/invoice-number?t=${Date.now()}`)
+      console.log("📊 Loading invoice number, attempt:", retryCount + 1)
+
+      const response = await fetch(`/api/invoice-number?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+        },
+      })
+
       if (response.ok) {
         const data = await response.json()
         setNextInvoiceNumber(data.nextInvoiceNumber)
         console.log("📊 Loaded invoice number:", data.nextInvoiceNumber)
+      } else if (retryCount < 2) {
+        // Retry up to 3 times
+        setTimeout(() => loadNextInvoiceNumber(retryCount + 1), 1000)
       }
     } catch (error) {
       console.error("Failed to load invoice number:", error)
-      setNextInvoiceNumber(1)
+      if (retryCount < 2) {
+        setTimeout(() => loadNextInvoiceNumber(retryCount + 1), 1000)
+      } else {
+        setNextInvoiceNumber(1)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -60,19 +76,25 @@ export default function InvoiceForm() {
     loadNextInvoiceNumber()
   }, [loadNextInvoiceNumber])
 
-  // Handle successful generation
+  // Handle successful generation with better state management
   useEffect(() => {
-    if (state?.success && state?.shouldReset) {
-      console.log("🔄 Resetting form after success")
+    if (state?.success && state?.shouldReset && state?.timestamp !== lastSuccessTimestamp) {
+      console.log("🔄 Resetting form after success, timestamp:", state.timestamp)
+      setLastSuccessTimestamp(state.timestamp)
+
+      // Reset form immediately
       resetForm()
+
+      // Update invoice number
       if (state.nextInvoiceNumber) {
         setNextInvoiceNumber(state.nextInvoiceNumber)
+        console.log("📊 Updated to next invoice number:", state.nextInvoiceNumber)
       } else {
-        // Fallback: reload from API
-        setTimeout(loadNextInvoiceNumber, 100)
+        // Fallback: reload from API after a delay
+        setTimeout(() => loadNextInvoiceNumber(), 500)
       }
     }
-  }, [state, loadNextInvoiceNumber])
+  }, [state, lastSuccessTimestamp, loadNextInvoiceNumber])
 
   // Handle paid status change
   useEffect(() => {
@@ -86,6 +108,7 @@ export default function InvoiceForm() {
   }, [isPaid, invoiceDate])
 
   const resetForm = () => {
+    console.log("🔄 Resetting form...")
     setItems([
       {
         id: Date.now().toString(),
@@ -159,7 +182,10 @@ export default function InvoiceForm() {
     <div className="container mx-auto py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-center">Invoice Generator</h1>
-        <p className="text-center text-gray-600 mt-2">Next Invoice Number: #{isLoading ? "..." : nextInvoiceNumber}</p>
+        <p className="text-center text-gray-600 mt-2">
+          Next Invoice Number: #{isLoading ? "..." : nextInvoiceNumber}
+          {process.env.NODE_ENV === "development" && <span className="text-xs text-orange-500 ml-2">(Dev Mode)</span>}
+        </p>
       </div>
 
       <form action={formAction} className="space-y-6">
@@ -366,6 +392,7 @@ export default function InvoiceForm() {
         {state?.error && (
           <div className="bg-red-50 border border-red-200 rounded-md p-4">
             <p className="text-red-800">{state.message}</p>
+            <p className="text-sm text-red-600 mt-1">If this persists in development, try restarting the dev server.</p>
           </div>
         )}
       </form>
