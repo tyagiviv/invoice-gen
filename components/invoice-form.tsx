@@ -272,7 +272,7 @@ export default function InvoiceForm() {
               />
               <div className="flex items-center mt-1 text-sm text-blue-600">
                 <Info className="h-4 w-4 mr-1" />
-                <span>For reference only - not sent automatically</span>
+                <span>For reference only - Email will be sent if email is provided</span>
               </div>
             </div>
             <div>
