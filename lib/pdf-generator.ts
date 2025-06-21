@@ -1,7 +1,5 @@
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
-import { readFileSync } from "fs"
-import { join } from "path"
 
 interface InvoiceItem {
   description: string
@@ -23,7 +21,7 @@ interface InvoiceData {
   items: InvoiceItem[]
 }
 
-// Cache the logo to avoid repeated reading
+// Cache the logo to avoid repeated fetching
 let cachedLogoBase64: string | null = null
 
 async function getLogoBase64(): Promise<string | null> {
@@ -32,54 +30,55 @@ async function getLogoBase64(): Promise<string | null> {
   }
 
   try {
-    // Since this runs on the server, we can use fs to read the file directly
-    const logoPath = join(process.cwd(), "public", "logo.png")
-    console.log("Attempting to read logo from:", logoPath)
+    console.log("Fetching logo from API...")
 
-    try {
-      const logoBuffer = readFileSync(logoPath)
-      console.log("Logo file read successfully, size:", logoBuffer.length, "bytes")
+    // Determine the base URL for the API call
+    const baseUrl =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : "http://localhost:3000"
 
-      // Convert buffer to base64
-      cachedLogoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`
-      console.log("Logo converted to base64, length:", cachedLogoBase64.length)
-      return cachedLogoBase64
-    } catch (fsError) {
-      console.log("Failed to read logo file with fs:", fsError)
+    const response = await fetch(`${baseUrl}/api/logo`, {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+      },
+    })
 
-      // Fallback: try alternative paths
-      const alternativePaths = [
-        join(process.cwd(), "logo.png"),
-        join(process.cwd(), "public", "placeholder-logo.png"),
-        join(process.cwd(), "assets", "logo.png"),
-      ]
+    if (response.ok) {
+      const data = await response.json()
+      console.log("Logo API response:", {
+        success: data.success,
+        hasLogo: !!data.logo,
+        hasPlaceholder: !!data.placeholder,
+      })
 
-      for (const altPath of alternativePaths) {
-        try {
-          console.log("Trying alternative path:", altPath)
-          const logoBuffer = readFileSync(altPath)
-          cachedLogoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`
-          console.log("Logo loaded from alternative path:", altPath)
-          return cachedLogoBase64
-        } catch (altError) {
-          console.log("Alternative path failed:", altPath, altError.message)
-          continue
-        }
+      if (data.success && data.logo) {
+        cachedLogoBase64 = data.logo
+        console.log("Logo loaded successfully from API")
+        return cachedLogoBase64
+      } else if (data.placeholder) {
+        console.log("Using placeholder logo from API")
+        cachedLogoBase64 = data.placeholder
+        return cachedLogoBase64
       }
+    } else {
+      console.log("Logo API request failed:", response.status)
     }
 
-    // If all file reading fails, create a simple placeholder
-    console.log("All file paths failed, creating placeholder logo")
+    // Fallback to creating a placeholder
+    console.log("Creating fallback placeholder logo")
     return createPlaceholderLogo()
   } catch (error) {
-    console.log("Error in getLogoBase64:", error)
+    console.log("Error fetching logo:", error)
     return createPlaceholderLogo()
   }
 }
 
 // Create a simple placeholder logo as base64
 function createPlaceholderLogo(): string {
-  // Create a simple SVG logo as fallback
   const svgLogo = `
     <svg width="180" height="152" xmlns="http://www.w3.org/2000/svg">
       <rect width="180" height="152" fill="#e6f3ff" stroke="#0066cc" stroke-width="2" rx="8"/>
@@ -96,8 +95,12 @@ function createPlaceholderLogo(): string {
     </svg>
   `
 
-  // Convert SVG to base64
-  const base64Svg = Buffer.from(svgLogo).toString("base64")
+  // Use btoa for browser compatibility or Buffer for Node.js
+  const base64Svg =
+    typeof window !== "undefined"
+      ? btoa(unescape(encodeURIComponent(svgLogo)))
+      : Buffer.from(svgLogo).toString("base64")
+
   return `data:image/svg+xml;base64,${base64Svg}`
 }
 
