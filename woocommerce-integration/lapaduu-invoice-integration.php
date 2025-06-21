@@ -149,19 +149,41 @@ function lapaduu_send_to_invoice_api($data) {
 }
 
 function lapaduu_email_invoice_to_customer($order, $invoice_result) {
-    // Optional: Send invoice PDF to customer
     $customer_email = $order->get_billing_email();
+    $customer_name = $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
     $invoice_number = $invoice_result['invoiceNumber'];
     
-    // You can customize this email
-    $subject = "LapaDuu OÜ Arve #$invoice_number";
-    $message = "Tere!\n\nTäname tellimuse eest! Manuses on teie arve.\n\nParimate soovidega,\nLapaDuu meeskond";
+    // Call the email API endpoint
+    $email_api_url = 'https://your-invoice-generator.vercel.app/api/send-email';
     
-    // Note: You'd need to convert base64 PDF to attachment
-    // This is a simplified version
-    wp_mail($customer_email, $subject, $message);
+    $email_data = array(
+        'recipientEmail' => $customer_email,
+        'invoiceNumber' => $invoice_number,
+        'customerName' => $customer_name,
+        'source' => 'website',
+        'pdfUrl' => $invoice_result['downloadUrl'] // Base64 PDF data
+    );
     
-    error_log("LapaDuu: Invoice emailed to $customer_email");
+    $response = wp_remote_post($email_api_url, array(
+        'headers' => array(
+            'Content-Type' => 'application/json',
+        ),
+        'body' => json_encode($email_data),
+        'timeout' => 30
+    ));
+    
+    if (!is_wp_error($response)) {
+        $body = wp_remote_retrieve_body($response);
+        $result = json_decode($body, true);
+        
+        if ($result && $result['success']) {
+            $order->add_order_note("Arve PDF saadetud emailile: $customer_email");
+            error_log("LapaDuu: Invoice PDF emailed to $customer_email");
+        } else {
+            $order->add_order_note("Arve email saatmine ebaõnnestus: $customer_email");
+            error_log("LapaDuu: Failed to email invoice to $customer_email");
+        }
+    }
 }
 
 // Add invoice info to WooCommerce admin order page

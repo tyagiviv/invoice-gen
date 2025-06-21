@@ -1,53 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
-import nodemailer from "nodemailer"
-
-// Force this API route to use Node.js runtime instead of Edge runtime
-export const runtime = "nodejs"
+import { sendInvoiceEmailSimple } from "@/lib/email-sender-simple"
 
 export async function POST(request: NextRequest) {
   try {
-    const { from, to, subject, text, attachments } = await request.json()
+    const body = await request.json()
+    const { recipientEmail, invoiceNumber, customerName, source, pdfUrl } = body
 
-    // Use Gmail's SMTP with basic authentication
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    })
-
-    const mailOptions = {
-      from,
-      to,
-      subject,
-      text,
-      attachments: attachments.map((att: any) => ({
-        filename: att.filename,
-        content: Buffer.from(att.content, "base64"),
-        contentType: att.contentType,
-      })),
+    if (!recipientEmail || !invoiceNumber || !pdfUrl) {
+      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
     }
 
-    const info = await transporter.sendMail(mailOptions)
+    // Convert base64 PDF to buffer
+    const base64Data = pdfUrl.replace("data:application/pdf;base64,", "")
+    const pdfBuffer = Buffer.from(base64Data, "base64")
 
-    return NextResponse.json({
-      success: true,
-      messageId: info.messageId,
-    })
-  } catch (error) {
-    console.error("Email sending error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
+    // Send email
+    const result = await sendInvoiceEmailSimple(
+      recipientEmail,
+      pdfBuffer,
+      invoiceNumber,
+      customerName,
+      source || "manual",
     )
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error("Email API error:", error)
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }

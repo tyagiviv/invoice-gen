@@ -154,9 +154,38 @@ export async function generateInvoice(prevState: any, formData: FormData) {
     const base64PDF = pdfBuffer.toString("base64")
     const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-    const message = data.clientEmail
+    let message = data.clientEmail
       ? `Invoice #${currentInvoiceNumber} created! Download and send to ${data.clientEmail}`
       : `Invoice #${currentInvoiceNumber} created successfully!`
+
+    // Send email if email address is provided
+    if (data.clientEmail && data.clientEmail.trim()) {
+      console.log("📧 Sending invoice email to:", data.clientEmail)
+
+      try {
+        const { sendInvoiceEmailSimple } = await import("@/lib/email-sender-simple")
+        const emailResult = await sendInvoiceEmailSimple(
+          data.clientEmail,
+          pdfBuffer,
+          currentInvoiceNumber,
+          data.buyerName,
+          "manual",
+        )
+
+        if (emailResult.success) {
+          console.log("✅ Email sent successfully")
+          message = `Invoice #${currentInvoiceNumber} created and emailed to ${data.clientEmail}!`
+        } else {
+          console.log("⚠️ Email sending failed:", emailResult.message)
+          message = `Invoice #${currentInvoiceNumber} created! Email sending failed: ${emailResult.message}`
+        }
+      } catch (emailError) {
+        console.error("❌ Email error:", emailError)
+        message = `Invoice #${currentInvoiceNumber} created! Email error: ${emailError.message}`
+      }
+    } else {
+      message = `Invoice #${currentInvoiceNumber} created successfully!`
+    }
 
     console.log("✅ Invoice generation completed successfully")
 
