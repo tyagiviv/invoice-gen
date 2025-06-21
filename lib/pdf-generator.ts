@@ -30,17 +30,48 @@ async function getLogoBase64(): Promise<string | null> {
   }
 
   try {
-    // Try multiple logo paths to ensure we find it
-    const logoPaths = ["/logo.png", "/public/logo.png", "./logo.png"]
+    // For local development, try different approaches
+    const isLocal =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+
+    console.log("Environment check - isLocal:", isLocal)
+
+    // Try multiple logo paths with full URLs for local development
+    const logoPaths = isLocal
+      ? [
+          `${window?.location?.origin}/logo.png`,
+          `${window?.location?.origin}/public/logo.png`,
+          "/logo.png",
+          "/public/logo.png",
+        ]
+      : ["/logo.png", "/public/logo.png"]
+
+    console.log("Trying logo paths:", logoPaths)
 
     for (const logoPath of logoPaths) {
       try {
-        const logoResponse = await fetch(logoPath)
+        console.log(`Attempting to fetch logo from: ${logoPath}`)
+
+        const logoResponse = await fetch(logoPath, {
+          method: "GET",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        })
+
+        console.log(`Response status for ${logoPath}:`, logoResponse.status)
+
         if (logoResponse.ok) {
           const logoBlob = await logoResponse.blob()
-          cachedLogoBase64 = await blobToBase64(logoBlob)
-          console.log(`Logo loaded successfully from: ${logoPath}`)
-          return cachedLogoBase64
+          console.log(`Logo blob size: ${logoBlob.size} bytes`)
+
+          if (logoBlob.size > 0) {
+            cachedLogoBase64 = await blobToBase64(logoBlob)
+            console.log(`Logo loaded successfully from: ${logoPath}`)
+            console.log(`Base64 length: ${cachedLogoBase64.length}`)
+            return cachedLogoBase64
+          }
         }
       } catch (pathError) {
         console.log(`Failed to load logo from ${logoPath}:`, pathError)
@@ -48,16 +79,36 @@ async function getLogoBase64(): Promise<string | null> {
       }
     }
 
-    console.log("Logo not found in any path, continuing without logo")
-    return null
+    // If all paths fail, try to create a simple placeholder
+    console.log("All logo paths failed, creating placeholder")
+    return createPlaceholderLogo()
   } catch (error) {
     console.log("Failed to load logo:", error)
-    return null
+    return createPlaceholderLogo()
   }
+}
+
+// Create a simple placeholder logo as base64
+function createPlaceholderLogo(): string {
+  // Create a simple SVG logo as fallback
+  const svgLogo = `
+    <svg width="180" height="152" xmlns="http://www.w3.org/2000/svg">
+      <rect width="180" height="152" fill="#f0f0f0" stroke="#ccc" stroke-width="2"/>
+      <text x="90" y="80" text-anchor="middle" font-family="Arial" font-size="16" fill="#666">
+        LapaDuu OÜ
+      </text>
+    </svg>
+  `
+
+  // Convert SVG to base64
+  const base64Svg = btoa(unescape(encodeURIComponent(svgLogo)))
+  return `data:image/svg+xml;base64,${base64Svg}`
 }
 
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
+
+  console.log("Starting PDF generation...")
 
   // Add logo with proper error handling
   const logoBase64 = await getLogoBase64()
@@ -65,13 +116,26 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
     try {
       const logoWidth = 45
       const logoHeight = 38
-      doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
+
+      // Determine image format from base64 string
+      const imageFormat = logoBase64.includes("data:image/svg") ? "SVG" : "PNG"
+
+      console.log(`Adding logo to PDF with format: ${imageFormat}`)
+      doc.addImage(logoBase64, imageFormat, 20, 15, logoWidth, logoHeight)
       console.log("Logo added to PDF successfully")
     } catch (logoError) {
       console.log("Error adding logo to PDF:", logoError)
+      // Add text fallback
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.text("LapaDuu OÜ", 20, 30)
     }
   } else {
-    console.log("No logo available, generating PDF without logo")
+    console.log("No logo available, adding text fallback")
+    // Add text fallback
+    doc.setFontSize(12)
+    doc.setFont("helvetica", "bold")
+    doc.text("LapaDuu OÜ", 20, 30)
   }
 
   // Add company name on the right
@@ -156,6 +220,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   // Add footer with company details
   addFooter(doc)
 
+  console.log("PDF generation completed")
   return Buffer.from(doc.output("arraybuffer"))
 }
 
