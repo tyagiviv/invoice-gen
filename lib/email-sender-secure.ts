@@ -19,8 +19,8 @@ export async function sendInvoiceEmailSecure(
     console.log(`📧 Using email: ${emailConfig.user}`)
     console.log(`🏢 From: ${emailConfig.fromName}`)
 
-    // Create transporter using config.ini settings
-    const transporter = nodemailer.createTransporter({
+    // Create transporter using config.ini settings - FIXED: createTransport not createTransporter
+    const transporter = nodemailer.createTransport({
       service: "gmail", // or your preferred service
       auth: {
         user: emailConfig.user,
@@ -55,6 +55,7 @@ export async function sendInvoiceEmailSecure(
       ],
     }
 
+    console.log("📤 Attempting to send email...")
     const result = await transporter.sendMail(mailOptions)
 
     console.log(`✅ Email sent successfully to ${finalRecipientEmail}`)
@@ -69,10 +70,21 @@ export async function sendInvoiceEmailSecure(
     }
   } catch (error) {
     console.error(`❌ Email sending failed:`, error)
+
+    // More detailed error logging
+    if (error.code === "EAUTH") {
+      console.error("🔐 Authentication failed - check your Gmail app password")
+    } else if (error.code === "ECONNECTION") {
+      console.error("🌐 Connection failed - check your internet connection")
+    } else if (error.code === "EMESSAGE") {
+      console.error("📧 Message format error - check email content")
+    }
+
     return {
       success: false,
       error: error.message,
-      message: `Failed to send email to ${recipientEmail}`,
+      errorCode: error.code,
+      message: `Failed to send email to ${recipientEmail}: ${error.message}`,
     }
   }
 }
