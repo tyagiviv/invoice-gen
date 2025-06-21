@@ -1,7 +1,6 @@
 "use server"
 
 import { generatePDF } from "@/lib/pdf-generator"
-import { getNextInvoiceNumber, saveInvoiceRecord } from "@/lib/invoice-storage"
 
 interface InvoiceItem {
   description: string
@@ -11,8 +10,13 @@ interface InvoiceItem {
   total: string
 }
 
+// Simple server-side counter that persists during server runtime
+let serverInvoiceCounter = 1
+
 export async function generateInvoice(prevState: any, formData: FormData) {
   try {
+    console.log("🚀 Starting invoice generation, current counter:", serverInvoiceCounter)
+
     // Extract form data
     const clientEmail = formData.get("clientEmail") as string
     const buyerName = (formData.get("buyerName") as string) || "ERAISIK"
@@ -71,8 +75,11 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       }
     }
 
-    // Get next invoice number from storage
-    const invoiceNumber = await getNextInvoiceNumber()
+    // Get current invoice number and increment for next time
+    const invoiceNumber = serverInvoiceCounter
+    serverInvoiceCounter++
+
+    console.log("📄 Generating invoice #", invoiceNumber)
 
     try {
       // Generate PDF
@@ -88,27 +95,18 @@ export async function generateInvoice(prevState: any, formData: FormData) {
         items,
       })
 
-      // Calculate total amount
-      const totalAmount = items.reduce((sum, item) => sum + Number.parseFloat(item.total), 0)
-
-      // Save invoice record to storage
-      await saveInvoiceRecord({
-        invoiceNumber,
-        createdAt: new Date().toISOString(),
-        clientEmail,
-        buyerName,
-        totalAmount,
-        isPaid,
-      })
+      console.log("✅ PDF generated successfully")
 
       // Create download URL
       const base64PDF = pdfBuffer.toString("base64")
       const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-      let message = `Invoice #${invoiceNumber} created successfully and saved to database!`
+      let message = `Invoice #${invoiceNumber} created successfully!`
       if (clientEmail && clientEmail.trim()) {
-        message = `Invoice #${invoiceNumber} created successfully and saved to database! Download the PDF and send it manually to ${clientEmail} for now.`
+        message = `Invoice #${invoiceNumber} created successfully! Download the PDF and send it manually to ${clientEmail} for now.`
       }
+
+      console.log("✅ Invoice generation completed successfully")
 
       return {
         success: true,
@@ -118,10 +116,12 @@ export async function generateInvoice(prevState: any, formData: FormData) {
         invoiceNumber,
         emailSent: false,
         shouldReset: true,
-        nextInvoiceNumber: invoiceNumber + 1,
+        nextInvoiceNumber: serverInvoiceCounter,
       }
     } catch (pdfError) {
-      console.error("PDF generation error:", pdfError)
+      console.error("❌ PDF generation error:", pdfError)
+      // Don't increment counter if PDF generation failed
+      serverInvoiceCounter--
       return {
         success: false,
         error: true,
@@ -129,7 +129,7 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       }
     }
   } catch (error) {
-    console.error("Error generating invoice:", error)
+    console.error("❌ Error generating invoice:", error)
     return {
       success: false,
       error: true,

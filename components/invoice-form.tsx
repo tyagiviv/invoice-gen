@@ -39,9 +39,10 @@ export default function InvoiceForm() {
   // Load next invoice number from API
   const loadNextInvoiceNumber = async () => {
     try {
-      const response = await fetch("/api/invoice-number")
+      const response = await fetch("/api/invoice-number?" + Date.now()) // Add timestamp to prevent caching
       const data = await response.json()
       setNextInvoiceNumber(data.nextInvoiceNumber)
+      console.log("📊 Loaded next invoice number:", data.nextInvoiceNumber)
     } catch (error) {
       console.error("Failed to load invoice number:", error)
       setNextInvoiceNumber(1)
@@ -56,10 +57,12 @@ export default function InvoiceForm() {
   // Reset form and update invoice number after successful generation
   useEffect(() => {
     if (state?.success && state?.shouldReset) {
+      console.log("🔄 Resetting form after successful generation")
       resetForm()
       // Update the next invoice number from the response
       if (state.nextInvoiceNumber) {
         setNextInvoiceNumber(state.nextInvoiceNumber)
+        console.log("📊 Updated next invoice number to:", state.nextInvoiceNumber)
       } else {
         loadNextInvoiceNumber()
       }
@@ -94,6 +97,7 @@ export default function InvoiceForm() {
   }
 
   const resetForm = () => {
+    console.log("🔄 Resetting form...")
     setItems([{ id: Date.now().toString(), description: "", unitPrice: "", quantity: "", discount: "", total: "" }])
     setIsPaid(false)
     setClientEmail("")
