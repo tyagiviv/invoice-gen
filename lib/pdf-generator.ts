@@ -23,22 +23,38 @@ interface InvoiceData {
 
 // Cache the logo to avoid repeated fetching
 let cachedLogoBase64: string | null = null
+let logoLoadAttempted = false
 
 async function getLogoBase64(): Promise<string | null> {
-  if (cachedLogoBase64) {
+  if (logoLoadAttempted && cachedLogoBase64) {
     return cachedLogoBase64
   }
+
+  if (logoLoadAttempted && !cachedLogoBase64) {
+    return null // Already tried and failed
+  }
+
+  logoLoadAttempted = true
 
   try {
     const logoResponse = await fetch("/logo.png")
     if (!logoResponse.ok) {
-      throw new Error("Logo not found")
+      console.log("Logo not found, continuing without logo")
+      return null
     }
+
     const logoBlob = await logoResponse.blob()
+
+    // Validate that it's actually a PNG
+    if (!logoBlob.type.includes("image")) {
+      console.log("Invalid image type, continuing without logo")
+      return null
+    }
+
     cachedLogoBase64 = await blobToBase64(logoBlob)
     return cachedLogoBase64
   } catch (error) {
-    console.log("Failed to load logo:", error)
+    console.log("Failed to load logo, continuing without logo:", error)
     return null
   }
 }
@@ -46,20 +62,23 @@ async function getLogoBase64(): Promise<string | null> {
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
 
-  // Add logo with smaller, more balanced dimensions
-  const logoBase64 = await getLogoBase64()
-  if (logoBase64) {
-    // Reduced size for better balance - about 60% of original Python size
-    const logoWidth = 45 // Reduced from 75
-    const logoHeight = 38 // Reduced from 64 (maintaining aspect ratio)
-
-    doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
+  // Try to add logo, but continue without it if it fails
+  try {
+    const logoBase64 = await getLogoBase64()
+    if (logoBase64) {
+      const logoWidth = 45
+      const logoHeight = 38
+      doc.addImage(logoBase64, "PNG", 20, 15, logoWidth, logoHeight)
+    }
+  } catch (error) {
+    console.log("Error adding logo to PDF, continuing without logo:", error)
+    // Continue without logo
   }
 
-  // Add company name on the right - adjusted position for smaller logo
+  // Add company name on the right
   doc.setFontSize(20)
   doc.setFont("helvetica", "bold")
-  doc.text("LapaDuu OÜ", 120, 30) // Moved back up slightly
+  doc.text("LapaDuu OÜ", 120, 30)
 
   // Add PAID label if invoice is paid
   if (data.isPaid) {
@@ -69,10 +88,10 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
     doc.setTextColor(0, 0, 0) // Reset to black
   }
 
-  // Client information (left side) - adjusted for smaller logo
+  // Client information (left side)
   doc.setFontSize(10)
   doc.setFont("helvetica", "normal")
-  let yPos = 75 // Reduced from 90 since logo is smaller
+  let yPos = 75
   doc.text(`Klient: ${data.buyerName}`, 20, yPos)
   doc.text(`Address: ${data.clientAddress}`, 20, yPos + 10)
   doc.text(`Reg kood: ${data.regCode}`, 20, yPos + 20)
@@ -83,8 +102,8 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   doc.text(`Makse tähtaeg: ${data.dueDate}`, 120, yPos + 20)
   doc.text("Viivis: 0,15% päevas", 120, yPos + 30)
 
-  // Items table - adjusted for smaller header
-  yPos = 125 // Reduced from 140
+  // Items table
+  yPos = 125
   const tableData = data.items.map((item) => {
     const hasDiscount = Number.parseFloat(item.discount) > 0
     const hasAnyDiscount = data.items.some((i) => Number.parseFloat(i.discount) > 0)
@@ -124,7 +143,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   // Calculate total
   const totalAmount = data.items.reduce((sum, item) => sum + Number.parseFloat(item.total), 0)
 
-  // Add total and tax info - get finalY from the last autoTable
+  // Add total and tax info
   const finalY = (doc as any).lastAutoTable.finalY + 20
   doc.text("Käibemaks: Ei ole KM kohuslane", 120, finalY)
   doc.setFont("helvetica", "bold")

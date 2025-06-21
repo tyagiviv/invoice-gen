@@ -76,37 +76,46 @@ export async function generateInvoice(prevState: any, formData: FormData) {
     // Get next invoice number
     const invoiceNumber = serverInvoiceCounter++
 
-    // Generate PDF
-    const pdfBuffer = await generatePDF({
-      invoiceNumber,
-      clientEmail,
-      buyerName,
-      clientAddress,
-      regCode,
-      invoiceDate,
-      dueDate,
-      isPaid,
-      items,
-    })
+    try {
+      // Generate PDF
+      const pdfBuffer = await generatePDF({
+        invoiceNumber,
+        clientEmail,
+        buyerName,
+        clientAddress,
+        regCode,
+        invoiceDate,
+        dueDate,
+        isPaid,
+        items,
+      })
 
-    // Create download URL
-    const base64PDF = pdfBuffer.toString("base64")
-    const downloadUrl = `data:application/pdf;base64,${base64PDF}`
+      // Create download URL
+      const base64PDF = pdfBuffer.toString("base64")
+      const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-    let message = `Invoice #${invoiceNumber} created successfully!`
-    if (clientEmail && clientEmail.trim()) {
-      message = `Invoice #${invoiceNumber} created successfully! Download the PDF and send it manually to ${clientEmail} for now.`
-    }
+      let message = `Invoice #${invoiceNumber} created successfully!`
+      if (clientEmail && clientEmail.trim()) {
+        message = `Invoice #${invoiceNumber} created successfully! Download the PDF and send it manually to ${clientEmail} for now.`
+      }
 
-    return {
-      success: true,
-      error: false,
-      message,
-      downloadUrl,
-      invoiceNumber,
-      emailSent: false,
-      shouldReset: true,
-      nextInvoiceNumber: serverInvoiceCounter, // Send next number for UI update
+      return {
+        success: true,
+        error: false,
+        message,
+        downloadUrl,
+        invoiceNumber,
+        emailSent: false,
+        shouldReset: true,
+        nextInvoiceNumber: serverInvoiceCounter,
+      }
+    } catch (pdfError) {
+      console.error("PDF generation error:", pdfError)
+      return {
+        success: false,
+        error: true,
+        message: `Failed to generate PDF: ${pdfError instanceof Error ? pdfError.message : "Unknown PDF error"}`,
+      }
     }
   } catch (error) {
     console.error("Error generating invoice:", error)
