@@ -37,26 +37,34 @@ let cachedConfig: AppConfig | null = null
 
 export function getConfig(): AppConfig {
   if (cachedConfig) {
+    console.log("📋 Using cached configuration")
     return cachedConfig
   }
 
   const configPath = join(process.cwd(), "config.ini")
 
   if (!existsSync(configPath)) {
-    console.error("❌ config.ini file not found!")
+    console.error("❌ config.ini file not found at:", configPath)
     console.log("📝 Please create config.ini file in the project root")
     throw new Error("Configuration file missing")
   }
 
   try {
+    console.log("📖 Reading config.ini from:", configPath)
     const configContent = readFileSync(configPath, "utf-8")
+    console.log("📄 Config file size:", configContent.length, "characters")
+
     const config = parseIniFile(configContent)
+    console.log("🔧 Parsed config sections:", Object.keys(config))
 
     // Validate required fields
     validateConfig(config)
 
     cachedConfig = config
-    console.log("✅ Configuration loaded successfully")
+    console.log("✅ Configuration loaded and cached successfully")
+    console.log("📧 Email user:", config.email?.user || "NOT SET")
+    console.log("🏢 Company name:", config.invoice?.companyName || "NOT SET")
+
     return config
   } catch (error) {
     console.error("❌ Error reading config.ini:", error.message)

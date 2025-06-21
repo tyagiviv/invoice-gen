@@ -97,9 +97,39 @@ export async function POST(request: NextRequest) {
     const base64PDF = pdfBuffer.toString("base64")
     const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-    const message = clientEmail
+    let message = clientEmail
       ? `Invoice #${currentInvoiceNumber} created! Download and send to ${clientEmail}`
       : `Invoice #${currentInvoiceNumber} created successfully!`
+
+    // 📧 NEW: Send email if email address is provided
+    if (clientEmail && clientEmail.trim()) {
+      console.log("📧 Sending invoice email to:", clientEmail)
+
+      try {
+        // Import the secure email sender
+        const { sendInvoiceEmailSecure } = await import("@/lib/email-sender-secure")
+
+        const emailResult = await sendInvoiceEmailSecure(
+          clientEmail,
+          pdfBuffer,
+          currentInvoiceNumber,
+          buyerName,
+          "manual", // This is from manual form submission
+        )
+
+        if (emailResult.success) {
+          console.log("✅ Email sent successfully to:", emailResult.sentTo)
+          message = `Invoice #${currentInvoiceNumber} created and emailed to ${clientEmail}!`
+        } else {
+          console.log("⚠️ Email sending failed:", emailResult.message)
+          message = `Invoice #${currentInvoiceNumber} created! Email sending failed: ${emailResult.message}`
+        }
+      } catch (emailError) {
+        console.error("❌ Email error:", emailError)
+        const errorMessage = emailError instanceof Error ? emailError.message : "Unknown email error"
+        message = `Invoice #${currentInvoiceNumber} created! Email error: ${errorMessage}`
+      }
+    }
 
     console.log("✅ Invoice generation completed")
 
