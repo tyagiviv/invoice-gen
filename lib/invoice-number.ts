@@ -1,37 +1,43 @@
-// Browser-compatible invoice number management using localStorage
+import fs from "fs/promises"
+import path from "path"
+
+const INVOICE_NUMBER_FILE = path.join(process.cwd(), "data", "invoice_number.json")
+
 export async function getNextInvoiceNumber(): Promise<number> {
   try {
-    // Check if we're in browser environment
-    if (typeof window === "undefined") {
-      // Server-side: return a random number for now
-      return Math.floor(Math.random() * 1000) + 1
-    }
+    // Ensure data directory exists
+    await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
 
-    // Use localStorage for browser environment
-    const stored = localStorage.getItem("invoice_number")
-    if (stored) {
-      const { invoice_number } = JSON.parse(stored)
-      return invoice_number + 1
-    }
-    return 1
+    // Try to read existing file
+    const data = await fs.readFile(INVOICE_NUMBER_FILE, "utf-8")
+    const { invoice_number } = JSON.parse(data)
+    return invoice_number + 1
   } catch (error) {
-    // If localStorage fails, start with 1
+    // File doesn't exist, start with 1
     return 1
   }
 }
 
 export async function saveInvoiceNumber(invoiceNumber: number): Promise<void> {
   try {
-    // Check if we're in browser environment
-    if (typeof window === "undefined") {
-      // Server-side: do nothing for now
-      return
-    }
+    // Ensure data directory exists
+    await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
 
-    // Save to localStorage
-    localStorage.setItem("invoice_number", JSON.stringify({ invoice_number: invoiceNumber }))
+    // Save the invoice number
+    await fs.writeFile(INVOICE_NUMBER_FILE, JSON.stringify({ invoice_number: invoiceNumber }, null, 2))
   } catch (error) {
-    // If localStorage fails, just continue (invoice will still be generated)
-    console.warn("Failed to save invoice number:", error)
+    console.error("Failed to save invoice number:", error)
+    throw error
+  }
+}
+
+// Get current invoice number without incrementing
+export async function getCurrentInvoiceNumber(): Promise<number> {
+  try {
+    const data = await fs.readFile(INVOICE_NUMBER_FILE, "utf-8")
+    const { invoice_number } = JSON.parse(data)
+    return invoice_number
+  } catch (error) {
+    return 0
   }
 }

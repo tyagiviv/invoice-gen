@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Trash2, Info } from "lucide-react"
 import { generateInvoice } from "@/app/actions/generate-invoice"
 import { useActionState } from "react"
-import { getNextInvoiceNumber, saveInvoiceNumber } from "@/lib/invoice-number"
 
 interface InvoiceItem {
   id: string
@@ -24,6 +23,7 @@ interface InvoiceItem {
 export default function InvoiceForm() {
   const [state, formAction, isPending] = useActionState(generateInvoice, null)
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState<number>(1)
+  const [isLoadingNumber, setIsLoadingNumber] = useState(true)
 
   const [items, setItems] = useState<InvoiceItem[]>([
     { id: "1", description: "", unitPrice: "", quantity: "", discount: "", total: "" },
@@ -35,24 +35,32 @@ export default function InvoiceForm() {
   const [clientAddress, setClientAddress] = useState("")
   const [regCode, setRegCode] = useState("")
 
-  // Load next invoice number on mount
-  useEffect(() => {
-    const loadInvoiceNumber = async () => {
-      const number = await getNextInvoiceNumber()
-      setNextInvoiceNumber(number)
+  // Load next invoice number from server
+  const loadNextInvoiceNumber = async () => {
+    try {
+      setIsLoadingNumber(true)
+      const response = await fetch("/api/invoice-number")
+      const data = await response.json()
+      setNextInvoiceNumber(data.nextInvoiceNumber)
+    } catch (error) {
+      console.error("Failed to load invoice number:", error)
+      setNextInvoiceNumber(1)
+    } finally {
+      setIsLoadingNumber(false)
     }
-    loadInvoiceNumber()
+  }
+
+  // Load invoice number on mount
+  useEffect(() => {
+    loadNextInvoiceNumber()
   }, [])
 
-  // Reset form after successful invoice generation
+  // Reset form and reload invoice number after successful generation
   useEffect(() => {
     if (state?.success && state?.shouldReset) {
       resetForm()
-      // Save invoice number and update next number
-      if (state.invoiceNumber) {
-        saveInvoiceNumber(state.invoiceNumber)
-        setNextInvoiceNumber(state.invoiceNumber + 1)
-      }
+      // Reload the next invoice number from server
+      loadNextInvoiceNumber()
     }
   }, [state])
 
@@ -119,7 +127,9 @@ export default function InvoiceForm() {
     <div className="container mx-auto py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-center">Invoice Generator</h1>
-        <p className="text-center text-gray-600 mt-2">Next Invoice Number: #{nextInvoiceNumber}</p>
+        <p className="text-center text-gray-600 mt-2">
+          Next Invoice Number: #{isLoadingNumber ? "Loading..." : nextInvoiceNumber}
+        </p>
       </div>
 
       <form action={formAction} className="space-y-6">
@@ -294,7 +304,7 @@ export default function InvoiceForm() {
 
         {/* Submit Button */}
         <div className="flex justify-center">
-          <Button type="submit" disabled={isPending} className="w-full md:w-auto px-8 py-3">
+          <Button type="submit" disabled={isPending || isLoadingNumber} className="w-full md:w-auto px-8 py-3">
             {isPending ? "Generating Invoice..." : "Generate Invoice"}
           </Button>
         </div>
