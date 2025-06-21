@@ -1,6 +1,7 @@
 "use server"
 
 import { generatePDF } from "@/lib/pdf-generator"
+import { getNextInvoiceNumber, saveInvoiceRecord } from "@/lib/invoice-storage"
 
 interface InvoiceItem {
   description: string
@@ -9,9 +10,6 @@ interface InvoiceItem {
   discount: string
   total: string
 }
-
-// Simple server-side counter
-let serverInvoiceCounter = 1
 
 export async function generateInvoice(prevState: any, formData: FormData) {
   try {
@@ -73,8 +71,8 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       }
     }
 
-    // Get next invoice number
-    const invoiceNumber = serverInvoiceCounter++
+    // Get next invoice number from storage
+    const invoiceNumber = await getNextInvoiceNumber()
 
     try {
       // Generate PDF
@@ -90,13 +88,26 @@ export async function generateInvoice(prevState: any, formData: FormData) {
         items,
       })
 
+      // Calculate total amount
+      const totalAmount = items.reduce((sum, item) => sum + Number.parseFloat(item.total), 0)
+
+      // Save invoice record to storage
+      await saveInvoiceRecord({
+        invoiceNumber,
+        createdAt: new Date().toISOString(),
+        clientEmail,
+        buyerName,
+        totalAmount,
+        isPaid,
+      })
+
       // Create download URL
       const base64PDF = pdfBuffer.toString("base64")
       const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-      let message = `Invoice #${invoiceNumber} created successfully!`
+      let message = `Invoice #${invoiceNumber} created successfully and saved to database!`
       if (clientEmail && clientEmail.trim()) {
-        message = `Invoice #${invoiceNumber} created successfully! Download the PDF and send it manually to ${clientEmail} for now.`
+        message = `Invoice #${invoiceNumber} created successfully and saved to database! Download the PDF and send it manually to ${clientEmail} for now.`
       }
 
       return {
@@ -107,7 +118,7 @@ export async function generateInvoice(prevState: any, formData: FormData) {
         invoiceNumber,
         emailSent: false,
         shouldReset: true,
-        nextInvoiceNumber: serverInvoiceCounter,
+        nextInvoiceNumber: invoiceNumber + 1,
       }
     } catch (pdfError) {
       console.error("PDF generation error:", pdfError)
