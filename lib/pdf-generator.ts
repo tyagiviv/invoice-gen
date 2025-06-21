@@ -26,6 +26,7 @@ let cachedLogoBase64: string | null = null
 
 async function getLogoBase64(): Promise<string | null> {
   if (cachedLogoBase64) {
+    console.log("Using cached logo")
     return cachedLogoBase64
   }
 
@@ -40,6 +41,8 @@ async function getLogoBase64(): Promise<string | null> {
           ? `https://${process.env.VERCEL_URL}`
           : "http://localhost:3000"
 
+    console.log("API Base URL:", baseUrl)
+
     const response = await fetch(`${baseUrl}/api/logo`, {
       method: "GET",
       headers: {
@@ -47,38 +50,43 @@ async function getLogoBase64(): Promise<string | null> {
       },
     })
 
+    console.log("Logo API response status:", response.status)
+
     if (response.ok) {
       const data = await response.json()
-      console.log("Logo API response:", {
+      console.log("Logo API response data:", {
         success: data.success,
         hasLogo: !!data.logo,
         hasPlaceholder: !!data.placeholder,
+        logoLength: data.logo ? data.logo.length : 0,
+        logoStart: data.logo ? data.logo.substring(0, 50) : "none",
       })
 
       if (data.success && data.logo) {
         cachedLogoBase64 = data.logo
-        console.log("Logo loaded successfully from API")
+        console.log("✅ Logo loaded successfully from API, length:", data.logo.length)
         return cachedLogoBase64
       } else if (data.placeholder) {
-        console.log("Using placeholder logo from API")
+        console.log("⚠️ Using placeholder logo from API")
         cachedLogoBase64 = data.placeholder
         return cachedLogoBase64
       }
     } else {
-      console.log("Logo API request failed:", response.status)
+      console.log("❌ Logo API request failed:", response.status, response.statusText)
     }
 
     // Fallback to creating a placeholder
     console.log("Creating fallback placeholder logo")
     return createPlaceholderLogo()
   } catch (error) {
-    console.log("Error fetching logo:", error)
+    console.log("❌ Error fetching logo:", error)
     return createPlaceholderLogo()
   }
 }
 
 // Create a simple placeholder logo as base64
 function createPlaceholderLogo(): string {
+  console.log("Creating placeholder logo...")
   const svgLogo = `
     <svg width="180" height="152" xmlns="http://www.w3.org/2000/svg">
       <rect width="180" height="152" fill="#e6f3ff" stroke="#0066cc" stroke-width="2" rx="8"/>
@@ -101,40 +109,67 @@ function createPlaceholderLogo(): string {
       ? btoa(unescape(encodeURIComponent(svgLogo)))
       : Buffer.from(svgLogo).toString("base64")
 
-  return `data:image/svg+xml;base64,${base64Svg}`
+  const result = `data:image/svg+xml;base64,${base64Svg}`
+  console.log("Placeholder logo created, length:", result.length)
+  return result
 }
 
 export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const doc = new jsPDF()
 
-  console.log("Starting PDF generation...")
+  console.log("🚀 Starting PDF generation...")
 
-  // Add logo with proper error handling
-  const logoBase64 = await getLogoBase64()
-  if (logoBase64) {
-    try {
-      const logoWidth = 45
-      const logoHeight = 38
+  // Add logo with extensive debugging
+  try {
+    console.log("📸 Attempting to get logo...")
+    const logoBase64 = await getLogoBase64()
 
-      // Determine image format from base64 string
-      const imageFormat = logoBase64.includes("data:image/svg") ? "SVG" : "PNG"
+    if (logoBase64) {
+      console.log("📸 Logo data received:", {
+        length: logoBase64.length,
+        type: logoBase64.substring(0, 30),
+        isSVG: logoBase64.includes("data:image/svg"),
+        isPNG: logoBase64.includes("data:image/png"),
+      })
 
-      console.log(`Adding logo to PDF with format: ${imageFormat}`)
-      doc.addImage(logoBase64, imageFormat, 20, 15, logoWidth, logoHeight)
-      console.log("Logo added to PDF successfully")
-    } catch (logoError) {
-      console.log("Error adding logo to PDF:", logoError)
+      try {
+        const logoWidth = 45
+        const logoHeight = 38
+
+        // Determine image format from base64 string
+        const imageFormat = logoBase64.includes("data:image/svg") ? "SVG" : "PNG"
+
+        console.log(`📸 Adding logo to PDF with format: ${imageFormat}`)
+        console.log(`📸 Logo dimensions: ${logoWidth}x${logoHeight} at position (20, 15)`)
+
+        // Try adding the image
+        doc.addImage(logoBase64, imageFormat, 20, 15, logoWidth, logoHeight)
+        console.log("✅ Logo added to PDF successfully!")
+      } catch (logoError) {
+        console.log("❌ Error adding logo to PDF:", logoError)
+        console.log("📸 Logo data that failed:", logoBase64.substring(0, 100))
+
+        // Add text fallback
+        doc.setFontSize(12)
+        doc.setFont("helvetica", "bold")
+        doc.text("LapaDuu OÜ", 20, 30)
+        console.log("📝 Added text fallback instead")
+      }
+    } else {
+      console.log("❌ No logo data received")
       // Add text fallback
       doc.setFontSize(12)
       doc.setFont("helvetica", "bold")
       doc.text("LapaDuu OÜ", 20, 30)
+      console.log("📝 Added text fallback - no logo data")
     }
-  } else {
-    console.log("No logo available, adding text fallback")
+  } catch (logoFetchError) {
+    console.log("❌ Error fetching logo:", logoFetchError)
     // Add text fallback
     doc.setFontSize(12)
     doc.setFont("helvetica", "bold")
     doc.text("LapaDuu OÜ", 20, 30)
+    console.log("📝 Added text fallback - fetch error")
   }
 
   // Add company name on the right
@@ -219,7 +254,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   // Add footer with company details
   addFooter(doc)
 
-  console.log("PDF generation completed")
+  console.log("✅ PDF generation completed")
   return Buffer.from(doc.output("arraybuffer"))
 }
 
