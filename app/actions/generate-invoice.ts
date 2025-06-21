@@ -1,7 +1,6 @@
 "use server"
 
 import { generatePDF } from "@/lib/pdf-generator"
-import { getNextInvoiceNumber, saveInvoiceNumber } from "@/lib/invoice-number"
 
 interface InvoiceItem {
   description: string
@@ -10,6 +9,9 @@ interface InvoiceItem {
   discount: string
   total: string
 }
+
+// Simple server-side invoice counter (resets on server restart)
+let invoiceCounter = 1
 
 export async function generateInvoice(prevState: any, formData: FormData) {
   try {
@@ -71,8 +73,8 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       }
     }
 
-    // Get next invoice number
-    const invoiceNumber = await getNextInvoiceNumber()
+    // Use server-side counter for invoice number
+    const invoiceNumber = invoiceCounter++
 
     // Generate PDF
     const pdfBuffer = await generatePDF({
@@ -87,18 +89,13 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       items,
     })
 
-    // Save invoice number
-    await saveInvoiceNumber(invoiceNumber)
-
     // Create download URL
     const base64PDF = pdfBuffer.toString("base64")
     const downloadUrl = `data:application/pdf;base64,${base64PDF}`
 
-    // For now, we'll skip email sending to avoid runtime issues
-    // You can integrate with SendGrid, Resend, or similar service later
     let message = "Invoice created successfully!"
     if (clientEmail && clientEmail.trim()) {
-      message = `Invoice created successfully! Download the PDF and send it manually to ${clientEmail} for now. Email integration can be added later with a proper email service.`
+      message = `Invoice created successfully! Download the PDF and send it manually to ${clientEmail} for now.`
     }
 
     return {
@@ -108,7 +105,7 @@ export async function generateInvoice(prevState: any, formData: FormData) {
       downloadUrl,
       invoiceNumber,
       emailSent: false,
-      shouldReset: true, // Add this flag
+      shouldReset: true,
     }
   } catch (error) {
     console.error("Error generating invoice:", error)

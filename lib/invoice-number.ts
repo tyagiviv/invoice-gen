@@ -1,24 +1,37 @@
-import fs from "fs/promises"
-import path from "path"
-
-const INVOICE_NUMBER_FILE = path.join(process.cwd(), "data", "invoice_number.json")
-
+// Browser-compatible invoice number management using localStorage
 export async function getNextInvoiceNumber(): Promise<number> {
   try {
-    // Ensure data directory exists
-    await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
+    // Check if we're in browser environment
+    if (typeof window === "undefined") {
+      // Server-side: return a random number for now
+      return Math.floor(Math.random() * 1000) + 1
+    }
 
-    // Try to read existing file
-    const data = await fs.readFile(INVOICE_NUMBER_FILE, "utf-8")
-    const { invoice_number } = JSON.parse(data)
-    return invoice_number + 1
+    // Use localStorage for browser environment
+    const stored = localStorage.getItem("invoice_number")
+    if (stored) {
+      const { invoice_number } = JSON.parse(stored)
+      return invoice_number + 1
+    }
+    return 1
   } catch (error) {
-    // File doesn't exist, start with 1
+    // If localStorage fails, start with 1
     return 1
   }
 }
 
 export async function saveInvoiceNumber(invoiceNumber: number): Promise<void> {
-  await fs.mkdir(path.dirname(INVOICE_NUMBER_FILE), { recursive: true })
-  await fs.writeFile(INVOICE_NUMBER_FILE, JSON.stringify({ invoice_number: invoiceNumber }, null, 2))
+  try {
+    // Check if we're in browser environment
+    if (typeof window === "undefined") {
+      // Server-side: do nothing for now
+      return
+    }
+
+    // Save to localStorage
+    localStorage.setItem("invoice_number", JSON.stringify({ invoice_number: invoiceNumber }))
+  } catch (error) {
+    // If localStorage fails, just continue (invoice will still be generated)
+    console.warn("Failed to save invoice number:", error)
+  }
 }
