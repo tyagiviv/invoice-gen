@@ -1,5 +1,5 @@
 import jsPDF from "jspdf"
-import "jspdf-autotable"
+import autoTable from "jspdf-autotable"
 
 interface InvoiceItem {
   description: string
@@ -111,7 +111,9 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   const headers = hasDiscounts
     ? ["Teenus/kaup", "Ühiku hind", "Kogus/h", "Discount (%)", "Summa"]
     : ["Teenus/kaup", "Ühiku hind", "Kogus/h", "Summa"]
-  ;(doc as any).autoTable({
+
+  // Use autoTable with proper import
+  autoTable(doc, {
     head: [headers],
     body: tableData,
     startY: yPos,
@@ -122,7 +124,7 @@ export async function generatePDF(data: InvoiceData): Promise<Buffer> {
   // Calculate total
   const totalAmount = data.items.reduce((sum, item) => sum + Number.parseFloat(item.total), 0)
 
-  // Add total and tax info
+  // Add total and tax info - get finalY from the last autoTable
   const finalY = (doc as any).lastAutoTable.finalY + 20
   doc.text("Käibemaks: Ei ole KM kohuslane", 120, finalY)
   doc.setFont("helvetica", "bold")
